@@ -1,0 +1,32 @@
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+September 11, 2025 - 06:42:43
+Django version 4.2.7, using settings 'rule_engine_backend.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+[11/Sep/2025 06:42:51] "GET /api/connectors/ HTTP/1.1" 200 5052
+[11/Sep/2025 06:42:58] "GET /api/credentials/ HTTP/1.1" 200 371
+[11/Sep/2025 06:43:01] "GET /api/workflows/ HTTP/1.1" 200 1596
+/Users/sid/Documents/Extensibility/rule_engine_backend/settings.py changed, reloading.
+Watching for file changes with StatReloader
+Performing system checks...
+
+System check identified no issues (0 silenced).
+September 11, 2025 - 06:46:04
+Django version 4.2.7, using settings 'rule_engine_backend.settings'
+Starting development server at http://127.0.0.1:8000/
+Quit the server with CONTROL-C.
+
+[11/Sep/2025 06:46:19] "GET /api/workflows/ HTTP/1.1" 200 1596
+[11/Sep/2025 06:46:19] "GET /api/workflows/ HTTP/1.1" 200 1596
+[11/Sep/2025 06:46:21] "GET /api/connectors/ HTTP/1.1" 200 5052
+[11/Sep/2025 06:46:21] "GET /api/connectors/ HTTP/1.1" 200 5052
+[11/Sep/2025 06:46:22] "GET /api/credentials/ HTTP/1.1" 200 371
+[11/Sep/2025 06:46:22] "GET /api/credentials/ HTTP/1.1" 200 371
+[11/Sep/2025 06:46:24] "GET /api/connectors/ HTTP/1.1" 200 5052
+[11/Sep/2025 06:46:24] "GET /api/connectors/ HTTP/1.1" 200 5052
+[11/Sep/2025 06:46:25] "GET /api/workflows/ HTTP/1.1" 200 1596
+[11/Sep/2025 06:46:25] "GET /api/workflows/ HTTP/1.1" 200 1596
