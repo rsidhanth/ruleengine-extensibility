@@ -60,6 +60,7 @@ Backend will be available at: http://localhost:8000
 ### Start Frontend Server (New Terminal)
 ```bash
 cd frontend
+npm install
 npm start
 ```
 Frontend will be available at: http://localhost:3000
