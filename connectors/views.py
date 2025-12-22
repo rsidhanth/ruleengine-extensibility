@@ -130,7 +130,7 @@ class ConnectorActionViewSet(viewsets.ModelViewSet):
 event_test_payloads = {}
 
 
-def generate_sample_from_schema(schema):
+def generate_sample_from_schema(schema, prop_name=None):
     """
     Generate a sample JSON payload from a JSON Schema.
     Converts schema metadata into actual example values.
@@ -145,7 +145,7 @@ def generate_sample_from_schema(schema):
         properties = schema.get('properties', {})
 
         for prop_name, prop_schema in properties.items():
-            sample[prop_name] = generate_sample_from_schema(prop_schema)
+            sample[prop_name] = generate_sample_from_schema(prop_schema, prop_name)
 
         return sample
 
@@ -153,20 +153,35 @@ def generate_sample_from_schema(schema):
         items_schema = schema.get('items', {'type': 'string'})
         # Generate 2 sample items for arrays
         return [
-            generate_sample_from_schema(items_schema),
-            generate_sample_from_schema(items_schema)
+            generate_sample_from_schema(items_schema, prop_name),
+            generate_sample_from_schema(items_schema, prop_name)
         ]
 
     elif schema_type == 'string':
-        # Use description or label if available, otherwise use generic example
-        label = schema.get('label', schema.get('description', prop_name if 'prop_name' in locals() else 'value'))
-        return f"example-{label.lower().replace(' ', '-')}"
+        # Use property name or description to generate meaningful examples
+        description = schema.get('description', '')
+        if prop_name:
+            # Generate context-aware examples based on field name
+            if 'id' in prop_name.lower() or 'cpid' in prop_name.lower():
+                return "01KD14WX563Q02TCTZ8J3VC1E8"
+            elif 'name' in prop_name.lower():
+                return "Example Name"
+            elif 'email' in prop_name.lower():
+                return "user@example.com"
+            elif 'url' in prop_name.lower():
+                return "https://example.com"
+            else:
+                return f"example-{prop_name.lower().replace('_', '-')}"
+        elif description:
+            return f"example-{description.lower().replace(' ', '-')[:30]}"
+        else:
+            return "example-value"
 
     elif schema_type == 'number' or schema_type == 'integer':
-        return 0
+        return 123
 
     elif schema_type == 'boolean':
-        return False
+        return True
 
     else:
         return None
@@ -237,24 +252,32 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def sample_payload(self, request, pk=None):
         """
-        Generate a sample payload from the event's JSON schema
+        Generate a sample payload from the event's parameters
         """
         event = self.get_object()
-        event_format = event.event_format
+        parameters = event.parameters
 
-        if not event_format:
+        if not parameters:
             return Response({
-                'error': 'No event format defined for this event',
+                'error': 'No parameters defined for this event',
                 'sample_payload': {}
             }, status=400)
 
-        sample = generate_sample_from_schema(event_format)
+        # Convert parameters to JSON Schema format
+        # Parameters are stored as: {"field": {"type": "string", "required": true, ...}}
+        # We need to convert to: {"type": "object", "properties": {"field": {"type": "string", ...}}}
+        schema = {
+            'type': 'object',
+            'properties': parameters
+        }
+
+        sample = generate_sample_from_schema(schema)
 
         return Response({
             'event_id': event.id,
             'event_name': event.name,
             'sample_payload': sample,
-            'schema': event_format  # Include schema for reference
+            'schema': parameters  # Include original parameters for reference
         })
 
     @action(detail=True, methods=['post'])

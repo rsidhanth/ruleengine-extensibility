@@ -84,35 +84,26 @@ const ConditionConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents 
     }
   }, [open, currentSet, conditionSets]);
 
-  // Parse event_format from trigger events to extract variables
+  // Parse parameters from trigger events to extract variables
   useEffect(() => {
     if (triggerEvents && triggerEvents.length > 0) {
       const variables = [];
 
       triggerEvents.forEach(event => {
-        // Handle different possible structures
-        let properties = null;
+        // Get parameters from the event
+        const parameters = event.parameters;
 
-        if (event.event_format) {
-          // Try to get properties from different possible locations
-          if (event.event_format.properties && typeof event.event_format.properties === 'object') {
-            // Check if it's an object (not an array)
-            if (!Array.isArray(event.event_format.properties)) {
-              properties = event.event_format.properties;
-            }
-          }
-        }
-
-        if (properties) {
-          Object.entries(properties).forEach(([key, propDef]) => {
+        if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
+          Object.entries(parameters).forEach(([key, paramDef]) => {
             // Check if variable already exists (in case multiple events have same field)
-            if (!variables.find(v => v.path === key)) {
+            if (!variables.find(v => v.path === `@event.${key}`)) {
               variables.push({
-                path: propDef.path || key,
-                label: propDef.label || key,
-                type: propDef.type || 'string',
-                description: propDef.description || '',
+                path: `@event.${key}`,
+                label: key,
+                type: paramDef.type || 'string',
+                description: paramDef.description || '',
                 eventName: event.name,
+                required: paramDef.required || false,
               });
             }
           });

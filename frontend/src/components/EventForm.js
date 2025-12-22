@@ -19,11 +19,20 @@ import {
   FormLabel,
 } from '@mui/material';
 
-const defaultEventFormat = {
-  cpId: '{{CP ID}}',
-  consentProfileId: '{{Consent profile ID}}',
-  purposes: ['purpose_001', 'purpose_002', 'purpose_003'],
-  customParameter: '{{Custom parameter}}'
+const defaultParameters = {
+  "CPID": {
+    "type": "string",
+    "required": true,
+    "description": "Document ID"
+  },
+  "PurposeIDs": {
+    "type": "array",
+    "required": true,
+    "description": "List of purpose IDs",
+    "items": {
+      "type": "string"
+    }
+  }
 };
 
 const sampleAcknowledgementPayload = {
@@ -36,7 +45,8 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    event_format: {},
+    event_format: 'JSON',
+    parameters: {},
     acknowledgement_enabled: false,
     acknowledgement_type: 'basic',
     acknowledgement_status_code: 200,
@@ -44,7 +54,7 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
     status: 'active',
   });
   const [error, setError] = useState('');
-  const [eventFormatJson, setEventFormatJson] = useState('');
+  const [parametersJson, setParametersJson] = useState('');
   const [acknowledgementPayloadJson, setAcknowledgementPayloadJson] = useState('');
 
   useEffect(() => {
@@ -52,27 +62,29 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
       setFormData({
         name: event.name || '',
         description: event.description || '',
-        event_format: event.event_format || {},
+        event_format: event.event_format || 'JSON',
+        parameters: event.parameters || {},
         acknowledgement_enabled: event.acknowledgement_enabled || false,
         acknowledgement_type: event.acknowledgement_type || 'basic',
         acknowledgement_status_code: event.acknowledgement_status_code || 200,
         acknowledgement_payload: event.acknowledgement_payload || {},
         status: event.status || 'active',
       });
-      setEventFormatJson(JSON.stringify(event.event_format || defaultEventFormat, null, 2));
+      setParametersJson(JSON.stringify(event.parameters || defaultParameters, null, 2));
       setAcknowledgementPayloadJson(JSON.stringify(event.acknowledgement_payload || sampleAcknowledgementPayload, null, 2));
     } else {
       setFormData({
         name: '',
         description: '',
-        event_format: defaultEventFormat,
+        event_format: 'JSON',
+        parameters: defaultParameters,
         acknowledgement_enabled: false,
         acknowledgement_type: 'basic',
         acknowledgement_status_code: 200,
         acknowledgement_payload: {},
         status: 'active',
       });
-      setEventFormatJson(JSON.stringify(defaultEventFormat, null, 2));
+      setParametersJson(JSON.stringify(defaultParameters, null, 2));
       setAcknowledgementPayloadJson(JSON.stringify(sampleAcknowledgementPayload, null, 2));
     }
     setError('');
@@ -86,9 +98,9 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
     });
   };
 
-  const handleEventFormatChange = (e) => {
+  const handleParametersChange = (e) => {
     const value = e.target.value;
-    setEventFormatJson(value);
+    setParametersJson(value);
 
     // Try to parse JSON
     try {
@@ -96,12 +108,12 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
         const parsed = JSON.parse(value);
         setFormData({
           ...formData,
-          event_format: parsed,
+          parameters: parsed,
         });
       } else {
         setFormData({
           ...formData,
-          event_format: {},
+          parameters: {},
         });
       }
     } catch (err) {
@@ -142,12 +154,12 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
       return;
     }
 
-    // Validate JSON format if provided
-    if (eventFormatJson.trim()) {
+    // Validate parameters JSON if provided
+    if (parametersJson.trim()) {
       try {
-        JSON.parse(eventFormatJson);
+        JSON.parse(parametersJson);
       } catch (err) {
-        setError('Invalid JSON format in Event Format field');
+        setError('Invalid JSON format in Parameters field');
         return;
       }
     }
@@ -208,23 +220,23 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
 
           <Divider sx={{ my: 3 }} />
 
-          {/* Event Format JSON Section */}
+          {/* Event Parameters JSON Schema Section */}
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Event Payload Format (JSON)
+              Event Parameters (JSON Schema)
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Define the JSON structure for this event. Use placeholders like {'{'}{'{'}}CP ID{'}'}{'}'} for dynamic values.
+              Define the parameter structure for this event. Each parameter should include type, required, and description fields.
             </Typography>
 
             <TextField
-              label="Event Format"
-              value={eventFormatJson}
-              onChange={handleEventFormatChange}
+              label="Parameters (JSON Schema)"
+              value={parametersJson}
+              onChange={handleParametersChange}
               fullWidth
               multiline
               rows={10}
-              helperText="Define the event structure with placeholders for dynamic values"
+              helperText='Define parameters like: {"CPID": {"type": "string", "required": true, "description": "Document ID"}}'
               sx={{
                 '& textarea': {
                   fontFamily: 'monospace',

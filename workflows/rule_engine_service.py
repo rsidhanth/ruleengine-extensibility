@@ -336,10 +336,11 @@ class SimpleRuleEngine:
             if action.action_type == 'async':
                 # Execute async action
                 action_result = connector_service.execute_async_action(
-                    connector, 
-                    action, 
+                    connector,
+                    action,
                     custom_params=parsed_params.get('query_params'),
                     custom_headers=parsed_params.get('headers'),
+                    custom_body=parsed_params.get('body'),
                     custom_body_params=parsed_params.get('body_params'),
                     custom_path_params=parsed_params.get('path_params'),
                     workflow_execution=getattr(self, 'current_workflow_execution', None),
@@ -393,11 +394,19 @@ class SimpleRuleEngine:
                     return False
             else:
                 # Execute synchronous action (existing logic)
+                print(f"DEBUG: About to call execute_action with:")
+                print(f"  - custom_params (query_params): {parsed_params.get('query_params')}")
+                print(f"  - custom_headers: {parsed_params.get('headers')}")
+                print(f"  - custom_body: {parsed_params.get('body')}")
+                print(f"  - custom_body_params: {parsed_params.get('body_params')}")
+                print(f"  - custom_path_params: {parsed_params.get('path_params')}")
+
                 action_result = connector_service.execute_action(
-                    connector, 
-                    action, 
+                    connector,
+                    action,
                     custom_params=parsed_params.get('query_params'),
                     custom_headers=parsed_params.get('headers'),
+                    custom_body=parsed_params.get('body'),
                     custom_body_params=parsed_params.get('body_params'),
                     custom_path_params=parsed_params.get('path_params'),
                     workflow_execution=getattr(self, 'current_workflow_execution', None),
@@ -519,7 +528,8 @@ class SimpleRuleEngine:
             'path_params': {},
             'query_params': {},
             'headers': {},
-            'body_params': {}
+            'body_params': {},
+            'body': None  # Direct request body (raw JSON)
         }
 
         try:
@@ -546,6 +556,25 @@ class SimpleRuleEngine:
             resolved_params_str = re.sub(r'\{\{([^}]+)\}\}', resolve_context_ref, params_str)
             print(f"DEBUG: After resolving context: {repr(resolved_params_str)}")
 
+            # Convert DSL format (unquoted keys) to valid JSON format (quoted keys)
+            # Match patterns like: key: value or key: {...} and convert to "key": value or "key": {...}
+            # This handles the DSL syntax: { body: {...} } -> { "body": {...} }
+            # Pattern: Match unquoted keys (word characters) followed by colon, but only when:
+            # - At start of string, or after opening brace ({), or after comma (,)
+            # - Followed by optional whitespace then colon
+            # This avoids matching colons inside string values like timestamps
+            def quote_keys(match):
+                prefix = match.group(1)  # The character before the key ('{', ',', or empty for start)
+                key = match.group(2).strip()
+                return f'{prefix}"{key}":'
+
+            # Replace unquoted keys with quoted keys
+            # Pattern: (start|{|,) followed by optional whitespace, then word characters, then colon
+            resolved_params_str = re.sub(r'([\{,])\s*(\w+):', quote_keys, resolved_params_str)
+            # Handle keys at the very start of the string (no prefix)
+            resolved_params_str = re.sub(r'^(\w+):', r'"\1":', resolved_params_str)
+            print(f"DEBUG: After quoting keys: {repr(resolved_params_str)}")
+
             # Try to parse as structured JSON with sections
             # Expected format: { "query_params": {...}, "headers": {...}, "body_params": {...} }
             # Or legacy format: { "param1": "value1", "param2": "value2" }
@@ -558,15 +587,26 @@ class SimpleRuleEngine:
             print(f"DEBUG: Parsed enhanced params: {parsed}")
 
             # Check if it's in new structured format
-            if any(key in parsed for key in ['path_params', 'query_params', 'headers', 'body_params']):
+            print(f"DEBUG: Checking if structured format. Keys in parsed: {list(parsed.keys())}")
+            if any(key in parsed for key in ['path_params', 'query_params', 'headers', 'body_params', 'body', 'request_body']):
+                print(f"DEBUG: Using structured format")
                 # New structured format
                 result['path_params'] = self._resolve_param_variables(parsed.get('path_params', {}))
                 result['query_params'] = self._resolve_param_variables(parsed.get('query_params', {}))
                 result['headers'] = self._resolve_param_variables(parsed.get('headers', {}))
                 result['body_params'] = self._resolve_param_variables(parsed.get('body_params', {}))
+                # Support both 'body' and 'request_body' keys for raw JSON body
+                raw_body = parsed.get('body') or parsed.get('request_body')
+                print(f"DEBUG: raw_body extracted: {raw_body}")
+                if raw_body is not None:
+                    result['body'] = self._resolve_param_variables(raw_body) if isinstance(raw_body, dict) else raw_body
+                    print(f"DEBUG: Set result['body'] to: {result['body']}")
             else:
+                print(f"DEBUG: Using legacy format (all as query params)")
                 # Legacy format - treat all as query params for backward compatibility
                 result['query_params'] = self._resolve_param_variables(parsed)
+
+            print(f"DEBUG: Final parsed_params result: {result}")
 
         except Exception as e:
             print(f"DEBUG: Enhanced parameter parsing failed: {str(e)}")

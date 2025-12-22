@@ -162,6 +162,7 @@ const Events = () => {
         description: event.description,
         event_type: 'custom',
         event_format: event.event_format,
+        parameters: event.parameters,
         acknowledgement_enabled: event.acknowledgement_enabled,
         acknowledgement_type: event.acknowledgement_type,
         acknowledgement_status_code: event.acknowledgement_status_code,

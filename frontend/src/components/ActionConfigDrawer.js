@@ -105,31 +105,31 @@ const ActionConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = [
     }
   }, [nodeData]);
 
-  // Parse event format to extract variables
+  // Parse parameters from trigger events to extract variables
   useEffect(() => {
     console.log('Parsing trigger events for variables:', triggerEvents);
     if (triggerEvents && triggerEvents.length > 0) {
       const variables = [];
 
       triggerEvents.forEach(event => {
-        console.log('Processing event:', event.name, 'event_format:', event.event_format);
-        if (event.event_format && event.event_format.properties) {
-          const properties = event.event_format.properties;
-          console.log('Properties found:', properties);
+        console.log('Processing event:', event.name, 'parameters:', event.parameters);
+        const parameters = event.parameters;
 
-          if (!Array.isArray(properties)) {
-            Object.entries(properties).forEach(([key, propDef]) => {
-              if (!variables.find(v => v.path === key)) {
-                variables.push({
-                  path: propDef.path || key,
-                  label: propDef.label || key,
-                  type: propDef.type || 'string',
-                  description: propDef.description || '',
-                  eventName: event.name,
-                });
-              }
-            });
-          }
+        if (parameters && typeof parameters === 'object' && !Array.isArray(parameters)) {
+          console.log('Parameters found:', parameters);
+
+          Object.entries(parameters).forEach(([key, paramDef]) => {
+            if (!variables.find(v => v.path === `@event.${key}`)) {
+              variables.push({
+                path: `@event.${key}`,
+                label: key,
+                type: paramDef.type || 'string',
+                description: paramDef.description || '',
+                eventName: event.name,
+                required: paramDef.required || false,
+              });
+            }
+          });
         }
       });
 
@@ -441,7 +441,7 @@ const ActionConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = [
           >
             <option value="">Select a variable</option>
             {allVariables.map((variable) => (
-              <option key={variable.path} value={variable.source === 'event' ? `@event.${variable.path}` : variable.path}>
+              <option key={variable.path} value={variable.path}>
                 {variable.displayLabel} - {variable.type}
               </option>
             ))}

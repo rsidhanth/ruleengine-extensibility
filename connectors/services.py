@@ -419,17 +419,32 @@ class ConnectorService:
             
             # Prepare request body
             json_data = None
+            logger.info(f"execute_action: action.http_method = {action.http_method}")
+            logger.info(f"execute_action: custom_body = {custom_body}")
+            logger.info(f"execute_action: custom_body_params = {custom_body_params}")
+
             if action.http_method in ['POST', 'PUT', 'PATCH']:
-                if custom_body_params is not None:
+                # Priority: custom_body (direct JSON) > custom_body_params (template-based) > default
+                if custom_body is not None:
+                    # Use custom_body directly - this is raw JSON to send as-is
+                    json_data = custom_body
+                    logger.info(f"execute_action: Using custom_body directly as json_data: {json_data}")
+                elif custom_body_params is not None:
                     # Use new structured approach with templates
                     json_data = self.build_request_body(action, custom_body_params)
+                    logger.info(f"execute_action: Built json_data from custom_body_params: {json_data}")
                 else:
-                    # Fallback to legacy approach
+                    # Fallback to action's default request body
                     json_data = action.request_body.copy() if action.request_body else {}
-                    if custom_body:
-                        json_data.update(custom_body)
+                    logger.info(f"execute_action: Using default request body: {json_data}")
             
             # Make the request
+            logger.info(f"execute_action: Making request with:")
+            logger.info(f"  - method: {action.http_method}")
+            logger.info(f"  - url: {url}")
+            logger.info(f"  - params: {params}")
+            logger.info(f"  - json: {json_data if json_data else None}")
+
             response = requests.request(
                 method=action.http_method,
                 url=url,
@@ -799,12 +814,14 @@ class ConnectorService:
             initial_params.update(custom_params)
         initial_body = {}
         if action.http_method in ['POST', 'PUT', 'PATCH']:
-            if custom_body_params is not None:
+            # Priority: custom_body (direct JSON) > custom_body_params (template-based) > default
+            if custom_body is not None:
+                # Use custom_body directly - this is raw JSON to send as-is
+                initial_body = custom_body
+            elif custom_body_params is not None:
                 initial_body = self.build_request_body(action, custom_body_params)
             else:
                 initial_body = action.request_body.copy() if action.request_body else {}
-                if custom_body:
-                    initial_body.update(custom_body)
         
         progress_entry = self._create_progress_entry(
             async_execution, 'initial', initial_url, action.http_method,
@@ -905,12 +922,14 @@ class ConnectorService:
         initial_params.update(updated_params)
         initial_body = {}
         if action.http_method in ['POST', 'PUT', 'PATCH']:
-            if updated_body_params:
+            # Priority: custom_body (direct JSON) > updated_body_params (template-based) > default
+            if custom_body is not None:
+                # Use custom_body directly - this is raw JSON to send as-is
+                initial_body = custom_body
+            elif updated_body_params:
                 initial_body = self.build_request_body(action, updated_body_params)
             else:
                 initial_body = action.request_body.copy() if action.request_body else {}
-                if custom_body:
-                    initial_body.update(custom_body)
         
         progress_entry = self._create_progress_entry(
             async_execution, 'initial', initial_url, action.http_method,

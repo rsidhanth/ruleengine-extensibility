@@ -152,14 +152,14 @@ const EventDetailsDrawer = ({ open, onClose, events = [] }) => {
                   </Box>
                 </Box>
 
-                {/* Event Fields */}
-                {event.event_format && event.event_format.properties && (
+                {/* Event Parameters */}
+                {event.parameters && Object.keys(event.parameters).length > 0 && (
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mb: 1, display: 'block' }}>
-                      Available Fields
+                      Available Event Variables
                     </Typography>
                     <List sx={{ p: 0 }}>
-                      {Object.entries(event.event_format.properties).map(([key, fieldDef]) => (
+                      {Object.entries(event.parameters).map(([key, fieldDef]) => (
                         <ListItem
                           key={key}
                           sx={{
@@ -169,9 +169,10 @@ const EventDetailsDrawer = ({ open, onClose, events = [] }) => {
                             mb: 1,
                             flexDirection: 'column',
                             alignItems: 'flex-start',
+                            p: 1.5,
                           }}
                         >
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', mb: 0.5 }}>
                             <Typography
                               variant="body2"
                               sx={{
@@ -180,7 +181,7 @@ const EventDetailsDrawer = ({ open, onClose, events = [] }) => {
                                 color: '#059669',
                               }}
                             >
-                              {fieldDef.label || key}
+                              {key}
                             </Typography>
                             <Chip
                               label={fieldDef.type || 'string'}
@@ -193,6 +194,19 @@ const EventDetailsDrawer = ({ open, onClose, events = [] }) => {
                                 color: '#1e40af',
                               }}
                             />
+                            {fieldDef.required && (
+                              <Chip
+                                label="required"
+                                size="small"
+                                sx={{
+                                  height: '18px',
+                                  fontSize: '0.65rem',
+                                  fontWeight: 600,
+                                  backgroundColor: '#fef3c7',
+                                  color: '#92400e',
+                                }}
+                              />
+                            )}
                           </Box>
                           {fieldDef.description && (
                             <Typography
@@ -210,9 +224,12 @@ const EventDetailsDrawer = ({ open, onClose, events = [] }) => {
                               fontFamily: 'monospace',
                               fontSize: '0.65rem',
                               color: '#6b7280',
+                              backgroundColor: '#f3f4f6',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
                             }}
                           >
-                            Path: {fieldDef.path || key}
+                            Use as: @event.{key}
                           </Typography>
                         </ListItem>
                       ))}

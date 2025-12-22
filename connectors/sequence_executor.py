@@ -355,7 +355,12 @@ class SequenceExecutor:
             value_type = cond.get('valueType')
 
             # Get the variable value from context
-            left_value = self._get_context_value(f'trigger.{variable}')
+            # Handle @event. prefix - strip it and look in trigger payload
+            if variable.startswith('@event.'):
+                field_name = variable.replace('@event.', '')
+                left_value = self._get_context_value(f'trigger.{field_name}')
+            else:
+                left_value = self._get_context_value(f'trigger.{variable}')
 
             # Get the comparison value
             if value_type == 'static':
@@ -545,6 +550,11 @@ class SequenceExecutor:
                     # Handle @event as a special case - it maps to trigger
                     if attr_path.startswith('event.'):
                         attr_path = 'trigger.' + attr_path[6:]  # Replace 'event.' with 'trigger.'
+
+                    # Safety fix: handle duplicate @event. prefix (e.g., @event.CPID → trigger.CPID)
+                    # This can happen if frontend accidentally added it twice
+                    while attr_path.startswith('trigger.@event.'):
+                        attr_path = 'trigger.' + attr_path[15:]  # Remove the extra '@event.'
 
                     resolved_value = self._get_context_value(attr_path)
                     logger.info(f"Resolved {var_ref} to: {resolved_value}")
