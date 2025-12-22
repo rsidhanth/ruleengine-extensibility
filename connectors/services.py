@@ -17,33 +17,68 @@ class ConnectorService:
     def __init__(self):
         self.timeout = 30  # Default timeout in seconds
 
-    def prepare_auth(self, credential):
-        """Prepare authentication for the request"""
+    def prepare_auth(self, credential, credential_set=None):
+        """Prepare authentication for the request
+
+        Args:
+            credential: Credential model instance (defines auth type and configuration)
+            credential_set: CredentialSet model instance (contains actual credential values)
+        """
         if not credential or credential.auth_type == 'none':
             return None, {}
 
-        if credential.auth_type == 'basic':
-            return HTTPBasicAuth(credential.username, credential.password), {}
-        
-        elif credential.auth_type == 'api_key':
-            header_name = credential.api_key_header or 'X-API-Key'
-            return None, {header_name: credential.api_key}
-        
-        elif credential.auth_type == 'bearer':
-            return None, {'Authorization': f'Bearer {credential.bearer_token}'}
-        
-        elif credential.auth_type == 'oauth2':
-            # Use OAuth2 access token if available
-            if credential.oauth2_access_token:
-                return None, {'Authorization': f'Bearer {credential.oauth2_access_token}'}
-            return None, {}
-        
-        elif credential.auth_type == 'custom':
-            # Use custom authentication service to get auth values
-            custom_auth_service = CustomAuthService()
-            auth_values = custom_auth_service.get_auth_values(credential)
-            return None, auth_values
-        
+        # If credential_set is provided, use values from it
+        if credential_set:
+            credential_values = credential_set.credential_values or {}
+
+            if credential.auth_type == 'basic':
+                username = credential_values.get('username', '')
+                password = credential_values.get('password', '')
+                return HTTPBasicAuth(username, password), {}
+
+            elif credential.auth_type == 'api_key':
+                header_name = credential.api_key_header or 'X-API-Key'
+                api_key = credential_values.get('api_key', '')
+                return None, {header_name: api_key}
+
+            elif credential.auth_type == 'bearer':
+                bearer_token = credential_values.get('bearer_token', '')
+                return None, {'Authorization': f'Bearer {bearer_token}'}
+
+            elif credential.auth_type == 'oauth2':
+                access_token = credential_values.get('oauth2_access_token', '')
+                if access_token:
+                    return None, {'Authorization': f'Bearer {access_token}'}
+                return None, {}
+
+            elif credential.auth_type == 'custom':
+                # Use custom authentication service with credential set
+                custom_auth_service = CustomAuthService()
+                auth_values = custom_auth_service.get_auth_values(credential, credential_set)
+                return None, auth_values
+
+        # Fallback to old credential model (for backward compatibility)
+        else:
+            if credential.auth_type == 'basic':
+                return HTTPBasicAuth(credential.username, credential.password), {}
+
+            elif credential.auth_type == 'api_key':
+                header_name = credential.api_key_header or 'X-API-Key'
+                return None, {header_name: credential.api_key}
+
+            elif credential.auth_type == 'bearer':
+                return None, {'Authorization': f'Bearer {credential.bearer_token}'}
+
+            elif credential.auth_type == 'oauth2':
+                if credential.oauth2_access_token:
+                    return None, {'Authorization': f'Bearer {credential.oauth2_access_token}'}
+                return None, {}
+
+            elif credential.auth_type == 'custom':
+                custom_auth_service = CustomAuthService()
+                auth_values = custom_auth_service.get_auth_values(credential)
+                return None, auth_values
+
         return None, {}
     
     def _create_progress_entry(self, async_execution, step_type, endpoint_url, http_method,
@@ -301,14 +336,18 @@ class ConnectorService:
         return result
 
     def execute_action(self, connector, action, custom_params=None, custom_headers=None, custom_body=None, custom_body_params=None,
-                      custom_path_params=None, workflow_execution=None, workflow_rule=None, rule_execution=None):
-        """Execute a connector action and return the response with comprehensive logging"""
+                      custom_path_params=None, workflow_execution=None, workflow_rule=None, rule_execution=None, credential_set_id=None):
+        """Execute a connector action and return the response with comprehensive logging
+
+        Args:
+            credential_set_id: Optional ID of the credential set to use. If not provided, uses the default credential set.
+        """
         start_time = time.time()
         request_timestamp = timezone.now()
-        
+
         # Initialize API call log
         api_log = None
-        
+
         try:
             # Validate mandatory parameters
             validation_errors = self.validate_mandatory_params(action, custom_params, custom_headers, custom_body_params, custom_path_params)
@@ -318,21 +357,21 @@ class ConnectorService:
                     build_url_result = self.build_url(connector, action, custom_path_params)
                 except:
                     build_url_result = f"{connector.base_url}/{action.endpoint_path}"
-                
+
                 self._log_api_call(
                     workflow_execution, workflow_rule, rule_execution,
                     action.name, connector.name, action.http_method,
                     build_url_result,
-                    custom_headers or {}, 
+                    custom_headers or {},
                     {
                         'path_params': custom_path_params or {},
                         'query_params': custom_params or {},
                         'body_params': custom_body_params or {}
-                    }, 
+                    },
                     custom_body or {},
-                    'validation_error', None, {}, {}, 
+                    'validation_error', None, {}, {},
                     f'Mandatory parameter validation failed: {"; ".join(validation_errors)}',
-                    request_timestamp, timezone.now(), 
+                    request_timestamp, timezone.now(),
                     int((time.time() - start_time) * 1000),
                     False, validation_errors
                 )
@@ -343,9 +382,26 @@ class ConnectorService:
                     'error_type': 'validation_error',
                     'response_time_ms': int((time.time() - start_time) * 1000)
                 }
-            
+
+            # Get credential set (use provided ID or default)
+            credential_set = None
+            if connector.credential:
+                if credential_set_id:
+                    from .models import CredentialSet
+                    try:
+                        credential_set = CredentialSet.objects.get(
+                            id=credential_set_id,
+                            credential=connector.credential
+                        )
+                    except CredentialSet.DoesNotExist:
+                        logger.warning(f"Credential set {credential_set_id} not found, falling back to default")
+                        credential_set = connector.credential.credential_sets.filter(is_default=True).first()
+                else:
+                    # Use default credential set
+                    credential_set = connector.credential.credential_sets.filter(is_default=True).first()
+
             # Prepare authentication
-            auth, auth_headers = self.prepare_auth(connector.credential)
+            auth, auth_headers = self.prepare_auth(connector.credential, credential_set)
             
             # Build URL with path parameters
             url = self.build_url(connector, action, custom_path_params)

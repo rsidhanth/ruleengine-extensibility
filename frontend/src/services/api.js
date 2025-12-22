@@ -17,6 +17,15 @@ export const credentialsApi = {
   delete: (id) => api.delete(`/credentials/${id}/`),
   testOAuth2: (data) => api.post('/credentials/test_oauth2/', data),
   testCustomAuth: (data) => api.post('/credentials/test_custom_auth/', data),
+  getRequiredFields: (id) => api.get(`/credentials/${id}/required_fields/`),
+};
+
+export const credentialSetsApi = {
+  getAll: (params = {}) => api.get('/credential-sets/', { params }),
+  get: (id) => api.get(`/credential-sets/${id}/`),
+  create: (data) => api.post('/credential-sets/', data),
+  update: (id, data) => api.put(`/credential-sets/${id}/`, data),
+  delete: (id) => api.delete(`/credential-sets/${id}/`),
 };
 
 export const connectorsApi = {
@@ -27,15 +36,19 @@ export const connectorsApi = {
   delete: (id) => api.delete(`/connectors/${id}/`),
   test: (id, data = {}) => api.post(`/connectors/${id}/test/`, data),
   executeAction: (id, data) => api.post(`/connectors/${id}/execute_action/`, data),
+  toggleStatus: (id) => api.post(`/connectors/${id}/toggle_status/`),
 };
 
 export const actionsApi = {
-  getAll: (connectorId = null) => api.get('/actions/', { params: connectorId ? { connector_id: connectorId } : {} }),
+  list: (params = {}) => api.get('/actions/', { params }),
+  getAll: (connectorId = null) => api.get('/actions/', { params: connectorId ? { connector: connectorId } : {} }),
   get: (id) => api.get(`/actions/${id}/`),
   create: (data) => api.post('/actions/', data),
   update: (id, data) => api.put(`/actions/${id}/`, data),
   delete: (id) => api.delete(`/actions/${id}/`),
   test: (id, data = {}) => api.post(`/actions/${id}/test/`, data),
+  toggleStatus: (id) => api.post(`/actions/${id}/toggle_status/`),
+  getCredentialSets: (id) => api.get(`/actions/${id}/credential_sets/`),
 };
 
 export const testsApi = {
@@ -84,6 +97,45 @@ export const workflowRulesApi = {
 export const ruleExecutionsApi = {
   getAll: (workflowExecutionId = null) => api.get('/rule-executions/', { params: workflowExecutionId ? { workflow_execution_id: workflowExecutionId } : {} }),
   get: (id) => api.get(`/rule-executions/${id}/`),
+};
+
+export const eventsApi = {
+  getAll: () => api.get('/events/'),
+  get: (id) => api.get(`/events/${id}/`),
+  create: (data) => api.post('/events/', data),
+  update: (id, data) => api.put(`/events/${id}/`, data),
+  delete: (id) => api.delete(`/events/${id}/`),
+  toggleStatus: (id) => api.post(`/events/${id}/toggle_status/`),
+  getTestEndpoint: (id) => api.get(`/events/${id}/test_endpoint/`),
+  getTestPayload: (id) => api.get(`/events/${id}/test_payload/`),
+  getSamplePayload: (id) => api.get(`/events/${id}/sample_payload/`),
+};
+
+export const sequencesApi = {
+  getAll: () => api.get('/sequences/'),
+  get: (id) => api.get(`/sequences/${id}/`),
+  create: (data) => api.post('/sequences/', data),
+  update: (id, data) => api.put(`/sequences/${id}/`, data),
+  delete: (id) => api.delete(`/sequences/${id}/`),
+  toggleStatus: (id) => api.post(`/sequences/${id}/toggle_status/`),
+  execute: (id, triggerData = {}) => api.post(`/sequences/${id}/execute/`, { trigger_data: triggerData }),
+  getTestInfo: (id) => api.get(`/sequences/${id}/test_info/`),
+  getTestStatus: (id) => api.get(`/sequences/${id}/test_status/`),
+};
+
+export const activityLogsApi = {
+  getAll: (params = {}) => api.get('/activity-logs/', { params }),
+  get: (id) => api.get(`/activity-logs/${id}/`),
+};
+
+export const sequenceExecutionsApi = {
+  getAll: (params = {}) => api.get('/sequence-executions/', { params }),
+  get: (id) => api.get(`/sequence-executions/${id}/`),
+};
+
+export const executionLogsApi = {
+  getAll: (params = {}) => api.get('/execution-logs/', { params }),
+  get: (id) => api.get(`/execution-logs/${id}/`),
 };
 
 export default api;

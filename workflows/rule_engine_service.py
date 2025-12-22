@@ -514,20 +514,20 @@ class SimpleRuleEngine:
         """Parse enhanced action parameters with support for structured parameters"""
         import json
         import re
-        
+
         result = {
             'path_params': {},
             'query_params': {},
             'headers': {},
             'body_params': {}
         }
-        
+
         try:
             print(f"DEBUG: Parsing enhanced params_str: {repr(params_str)}")
-            
+
             # Clean up the parameters string
             params_str = params_str.strip()
-            
+
             # First try to resolve any {{context}} references before parsing
             def resolve_context_ref(match):
                 attr_path = match.group(1)
@@ -541,41 +541,90 @@ class SimpleRuleEngine:
                     return resolved
                 else:
                     return json.dumps(resolved)
-            
+
             # Replace {{...}} with resolved values
             resolved_params_str = re.sub(r'\{\{([^}]+)\}\}', resolve_context_ref, params_str)
             print(f"DEBUG: After resolving context: {repr(resolved_params_str)}")
-            
+
             # Try to parse as structured JSON with sections
             # Expected format: { "query_params": {...}, "headers": {...}, "body_params": {...} }
             # Or legacy format: { "param1": "value1", "param2": "value2" }
-            
+
             # Wrap in braces if not already wrapped
             if not resolved_params_str.strip().startswith('{'):
                 resolved_params_str = '{' + resolved_params_str + '}'
-            
+
             parsed = json.loads(resolved_params_str)
             print(f"DEBUG: Parsed enhanced params: {parsed}")
-            
+
             # Check if it's in new structured format
             if any(key in parsed for key in ['path_params', 'query_params', 'headers', 'body_params']):
                 # New structured format
-                result['path_params'] = parsed.get('path_params', {})
-                result['query_params'] = parsed.get('query_params', {})
-                result['headers'] = parsed.get('headers', {})
-                result['body_params'] = parsed.get('body_params', {})
+                result['path_params'] = self._resolve_param_variables(parsed.get('path_params', {}))
+                result['query_params'] = self._resolve_param_variables(parsed.get('query_params', {}))
+                result['headers'] = self._resolve_param_variables(parsed.get('headers', {}))
+                result['body_params'] = self._resolve_param_variables(parsed.get('body_params', {}))
             else:
                 # Legacy format - treat all as query params for backward compatibility
-                result['query_params'] = parsed
-            
+                result['query_params'] = self._resolve_param_variables(parsed)
+
         except Exception as e:
             print(f"DEBUG: Enhanced parameter parsing failed: {str(e)}")
             # Fallback to legacy parsing
             legacy_params = self._parse_action_params(params_str)
             result['query_params'] = legacy_params
-        
+
         return result
-    
+
+    def _resolve_param_variables(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively resolve variable references in parameters.
+        Handles the structure: {"type": "variable", "value": "@event.field"}
+        """
+        if not isinstance(params, dict):
+            return params
+
+        resolved = {}
+        for key, value in params.items():
+            if isinstance(value, dict):
+                # Check if this is a variable reference structure
+                if value.get('type') == 'variable' and 'value' in value:
+                    # This is a variable reference - resolve it
+                    var_ref = value['value']
+                    print(f"DEBUG: Resolving variable reference: {var_ref}")
+
+                    # Handle @event.field or @context.field references
+                    if var_ref.startswith('@'):
+                        # Remove @ prefix and resolve from context
+                        attr_path = var_ref[1:]  # Remove @
+
+                        # Handle @event as a special case - it maps to context root
+                        if attr_path.startswith('event.'):
+                            attr_path = attr_path[6:]  # Remove 'event.'
+
+                        resolved_value = self._get_nested_value(attr_path)
+                        print(f"DEBUG: Resolved {var_ref} to: {resolved_value}")
+                        resolved[key] = resolved_value
+                    else:
+                        # Direct context lookup
+                        resolved_value = self._get_nested_value(var_ref)
+                        print(f"DEBUG: Resolved {var_ref} to: {resolved_value}")
+                        resolved[key] = resolved_value
+                else:
+                    # Regular nested dict - recurse
+                    resolved[key] = self._resolve_param_variables(value)
+            elif isinstance(value, list):
+                # Recurse into lists
+                resolved[key] = [
+                    self._resolve_param_variables(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            else:
+                # Primitive value - keep as is
+                resolved[key] = value
+
+        return resolved
+
     def _apply_response_mappings(self, mappings_str: str, response_data: Dict[str, Any], result: Dict[str, Any]):
         """Apply response field mappings to workflow fields"""
         try:

@@ -14,6 +14,9 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Switch,
+  FormControlLabel,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -24,7 +27,7 @@ import {
 import { connectorsApi } from '../services/api';
 import ConnectorForm from '../components/ConnectorForm';
 
-const Connectors = ({ onNavigateToActions }) => {
+const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const [connectors, setConnectors] = useState([]);
   const [formOpen, setFormOpen] = useState(false);
   const [selectedConnector, setSelectedConnector] = useState(null);
@@ -80,6 +83,34 @@ const Connectors = ({ onNavigateToActions }) => {
     onNavigateToActions(connector);
   };
 
+  const handleCredentialSetsClick = (connector) => {
+    if (connector.credential && onNavigateToCredentialSets) {
+      // We need to pass the full credential object
+      // Since we only have the credential ID, we'll construct a minimal credential object
+      const credential = {
+        id: connector.credential,
+        name: connector.credential_name
+      };
+      onNavigateToCredentialSets(credential);
+    }
+  };
+
+  const handleToggleStatus = async (connector) => {
+    try {
+      await connectorsApi.toggleStatus(connector.id);
+      setError(''); // Clear any previous errors
+      loadConnectors();
+    } catch (err) {
+      console.error('Error toggling connector status:', err);
+      const errorMessage = err.response?.data?.error || 'Failed to toggle connector status';
+      setError(errorMessage);
+    }
+  };
+
+  const getConnectorTypeColor = (type) => {
+    return type === 'system' ? 'success' : 'default';
+  };
+
   if (loading) return <Typography>Loading...</Typography>;
 
   return (
@@ -104,9 +135,10 @@ const Connectors = ({ onNavigateToActions }) => {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Description</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell>Status</TableCell>
               <TableCell>Base URL</TableCell>
-              <TableCell>Credential</TableCell>
+              <TableCell>Credential Sets</TableCell>
               <TableCell align="center">Actions</TableCell>
               <TableCell align="center">Operations</TableCell>
             </TableRow>
@@ -118,11 +150,38 @@ const Connectors = ({ onNavigateToActions }) => {
                   <Typography variant="subtitle1" fontWeight="medium">
                     {connector.name}
                   </Typography>
+                  {connector.description && (
+                    <Typography variant="body2" color="textSecondary">
+                      {connector.description}
+                    </Typography>
+                  )}
                 </TableCell>
                 <TableCell>
-                  <Typography variant="body2" color="textSecondary">
-                    {connector.description || 'No description'}
-                  </Typography>
+                  <Chip
+                    label={connector.connector_type === 'system' ? 'System' : 'Custom'}
+                    size="small"
+                    color={getConnectorTypeColor(connector.connector_type)}
+                    variant="filled"
+                  />
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="Toggle Active/Inactive (cascades to actions)">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={connector.status === 'active'}
+                          onChange={() => handleToggleStatus(connector)}
+                          color="success"
+                          size="small"
+                        />
+                      }
+                      label={
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {connector.status === 'active' ? 'Active' : 'Inactive'}
+                        </Typography>
+                      }
+                    />
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
@@ -131,12 +190,26 @@ const Connectors = ({ onNavigateToActions }) => {
                 </TableCell>
                 <TableCell>
                   {connector.credential_name ? (
-                    <Chip 
-                      label={connector.credential_name}
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                    />
+                    <Box>
+                      <Tooltip title="Click to view and manage credential sets">
+                        <Button
+                          size="small"
+                          variant={connector.credential_sets_count > 0 ? "outlined" : "text"}
+                          color={connector.credential_sets_count > 0 ? "primary" : "error"}
+                          onClick={() => handleCredentialSetsClick(connector)}
+                          sx={{ textTransform: 'none' }}
+                        >
+                          {connector.credential_sets_count > 0 ? (
+                            `${connector.credential_sets_count} set${connector.credential_sets_count !== 1 ? 's' : ''}`
+                          ) : (
+                            'No sets'
+                          )}
+                        </Button>
+                      </Tooltip>
+                      <Typography variant="caption" color="textSecondary" display="block">
+                        Profile: {connector.credential_name}
+                      </Typography>
+                    </Box>
                   ) : (
                     <Typography variant="body2" color="textSecondary">
                       No credential
@@ -144,7 +217,7 @@ const Connectors = ({ onNavigateToActions }) => {
                   )}
                 </TableCell>
                 <TableCell align="center">
-                  <Chip 
+                  <Chip
                     label={`${connector.actions?.length || 0} actions`}
                     size="small"
                     variant="outlined"
@@ -152,29 +225,32 @@ const Connectors = ({ onNavigateToActions }) => {
                 </TableCell>
                 <TableCell align="center">
                   <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleEdit(connector)}
-                      title="Edit"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleActionsClick(connector)}
-                      title="Manage Actions"
-                      color="primary"
-                    >
-                      <ActionsIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(connector.id)}
-                      title="Delete"
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+                    <Tooltip title="Edit">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleEdit(connector)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Manage Actions">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleActionsClick(connector)}
+                        color="primary"
+                      >
+                        <ActionsIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(connector.id)}
+                        color="error"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                 </TableCell>
               </TableRow>

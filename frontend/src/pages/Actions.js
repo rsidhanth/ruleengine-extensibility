@@ -3,16 +3,22 @@ import {
   Container,
   Typography,
   Button,
-  Card,
-  CardContent,
-  CardActions,
-  Grid,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
   IconButton,
   Chip,
   Box,
   Alert,
   Breadcrumbs,
   Link,
+  Switch,
+  FormControlLabel,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -41,9 +47,14 @@ const Actions = ({ connector, onBack }) => {
 
   const loadActions = async () => {
     try {
+      console.log('Loading actions for connector:', connector);
+      console.log('Connector ID:', connector.id);
       const response = await actionsApi.getAll(connector.id);
+      console.log('Actions response:', response.data);
+      console.log('Number of actions:', response.data.length);
       setActions(response.data);
     } catch (err) {
+      console.error('Failed to load actions:', err);
       setError('Failed to load actions');
     } finally {
       setLoading(false);
@@ -85,6 +96,16 @@ const Actions = ({ connector, onBack }) => {
     setTestOpen(true);
   };
 
+  const handleToggleStatus = async (action) => {
+    try {
+      await actionsApi.toggleStatus(action.id);
+      loadActions();
+    } catch (err) {
+      console.error('Error toggling action status:', err);
+      setError('Failed to toggle action status');
+    }
+  };
+
   const getMethodColor = (method) => {
     switch (method) {
       case 'GET': return 'success';
@@ -96,10 +117,27 @@ const Actions = ({ connector, onBack }) => {
     }
   };
 
+  const getOriginTypeColor = (type) => {
+    return type === 'system' ? 'success' : 'default';
+  };
+
+  const getParametersSummary = (action) => {
+    const parts = [];
+    const queryCount = Object.keys(action.query_params_config || {}).length;
+    const pathCount = Object.keys(action.path_params_config || {}).length;
+    const bodyCount = Object.keys(action.request_body_params || {}).length;
+
+    if (queryCount > 0) parts.push(`${queryCount} query param${queryCount > 1 ? 's' : ''}`);
+    if (pathCount > 0) parts.push(`${pathCount} path param${pathCount > 1 ? 's' : ''}`);
+    if (bodyCount > 0) parts.push(`${bodyCount} body param${bodyCount > 1 ? 's' : ''}`);
+
+    return parts.length > 0 ? parts.join(', ') : 'No parameters';
+  };
+
   if (loading) return <Typography>Loading...</Typography>;
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       <Breadcrumbs sx={{ mb: 2 }}>
         <Link
           component="button"
@@ -128,86 +166,7 @@ const Actions = ({ connector, onBack }) => {
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      <Grid container spacing={3}>
-        {actions.map((action) => (
-          <Grid item xs={12} md={6} lg={4} key={action.id}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="h6" component="h2" sx={{ flexGrow: 1 }}>
-                    {action.name}
-                  </Typography>
-                  <Chip 
-                    label={action.http_method}
-                    size="small"
-                    color={getMethodColor(action.http_method)}
-                  />
-                </Box>
-                <Typography variant="body2" color="textSecondary" paragraph>
-                  {action.description || 'No description'}
-                </Typography>
-                <Typography variant="body2" color="textSecondary" gutterBottom>
-                  <strong>Path:</strong> {action.endpoint_path || '/'}
-                </Typography>
-                
-                <Box sx={{ mt: 1 }}>
-                  {Object.keys(action.query_params || {}).length > 0 && (
-                    <Chip 
-                      label={`${Object.keys(action.query_params).length} query params`}
-                      size="small"
-                      variant="outlined"
-                      sx={{ mr: 0.5, mb: 0.5 }}
-                    />
-                  )}
-                  {Object.keys(action.headers || {}).length > 0 && (
-                    <Chip 
-                      label={`${Object.keys(action.headers).length} headers`}
-                      size="small"
-                      variant="outlined"
-                      sx={{ mr: 0.5, mb: 0.5 }}
-                    />
-                  )}
-                  {Object.keys(action.request_body || {}).length > 0 && (
-                    <Chip 
-                      label="Has body"
-                      size="small"
-                      variant="outlined"
-                      sx={{ mr: 0.5, mb: 0.5 }}
-                    />
-                  )}
-                </Box>
-              </CardContent>
-              <CardActions>
-                <IconButton
-                  size="small"
-                  onClick={() => handleEdit(action)}
-                  title="Edit"
-                >
-                  <EditIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleTest(action)}
-                  title="Test Action"
-                  color="primary"
-                >
-                  <TestIcon />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleDelete(action.id)}
-                  title="Delete"
-                  color="error"
-                >
-                  <DeleteIcon />
-                </IconButton>
-              </CardActions>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-
-      {actions.length === 0 && !loading && (
+      {actions.length === 0 && !loading ? (
         <Box sx={{ textAlign: 'center', mt: 4 }}>
           <Typography variant="h6" color="textSecondary">
             No actions found
@@ -219,6 +178,115 @@ const Actions = ({ connector, onBack }) => {
             Add Action
           </Button>
         </Box>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell><strong>Action Name</strong></TableCell>
+                <TableCell><strong>Type</strong></TableCell>
+                <TableCell><strong>Method</strong></TableCell>
+                <TableCell><strong>Status</strong></TableCell>
+                <TableCell><strong>Endpoint Path</strong></TableCell>
+                <TableCell><strong>Description</strong></TableCell>
+                <TableCell><strong>Parameters</strong></TableCell>
+                <TableCell align="right"><strong>Actions</strong></TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {actions.map((action) => (
+                <TableRow key={action.id} hover>
+                  <TableCell>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {action.name}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={action.origin_type === 'system' ? 'System' : 'Custom'}
+                      size="small"
+                      color={getOriginTypeColor(action.origin_type)}
+                      variant="filled"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={action.http_method}
+                      size="small"
+                      color={getMethodColor(action.http_method)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Tooltip title={connector?.status === 'inactive' ? 'Connector is inactive' : 'Toggle Active/Inactive'}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={action.status === 'active'}
+                            onChange={() => handleToggleStatus(action)}
+                            color="success"
+                            size="small"
+                            disabled={connector?.status === 'inactive'}
+                          />
+                        }
+                        label={
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {action.status === 'active' ? 'Active' : 'Inactive'}
+                          </Typography>
+                        }
+                      />
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontFamily: 'monospace',
+                        fontSize: '0.875rem',
+                      }}
+                    >
+                      {action.endpoint_path || '/'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">
+                      {action.description || 'No description'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
+                      {getParametersSummary(action)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleEdit(action)}
+                      title="Edit"
+                    >
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleTest(action)}
+                      title="Test Action"
+                      color="primary"
+                    >
+                      <TestIcon />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDelete(action.id)}
+                      title="Delete"
+                      color="error"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
 
       <EnhancedActionForm

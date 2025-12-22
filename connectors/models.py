@@ -13,33 +13,39 @@ class Credential(models.Model):
         ('custom', 'Custom Authentication'),
     ]
 
+    CREDENTIAL_TYPES = [
+        ('system', 'System Credential Profile'),
+        ('custom', 'Custom Credential Profile'),
+    ]
+
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     auth_type = models.CharField(max_length=10, choices=AUTH_TYPES, default='none')
-    
-    # Basic Auth fields
+    credential_type = models.CharField(max_length=10, choices=CREDENTIAL_TYPES, default='custom', help_text="System or custom credential profile")
+
+    # Configuration fields (non-secret) - these define the structure
+    # API Key configuration
+    api_key_header = models.CharField(max_length=50, default='X-API-Key', blank=True, help_text="Header name for API key (e.g., 'X-API-Key', 'Authorization')")
+
+    # OAuth2 configuration (URLs and scope, not secrets)
+    oauth2_auth_url = models.URLField(blank=True, help_text="OAuth2 authorization URL")
+    oauth2_token_url = models.URLField(blank=True, help_text="OAuth2 token URL")
+    oauth2_scope = models.CharField(max_length=255, blank=True, help_text="OAuth2 scope")
+
+    # Custom Auth configuration - defines structure, not values
+    custom_auth_config = models.JSONField(default=dict, blank=True, help_text="Custom authentication structure configuration (field names, types, descriptions)")
+
+    # Legacy fields - kept for backward compatibility, will be migrated to CredentialSet
+    # These should be considered deprecated
     username = models.CharField(max_length=100, blank=True)
     password = models.CharField(max_length=255, blank=True)
-    
-    # API Key fields
     api_key = models.CharField(max_length=255, blank=True)
-    api_key_header = models.CharField(max_length=50, default='X-API-Key', blank=True)
-    
-    # Bearer Token fields
     bearer_token = models.CharField(max_length=500, blank=True)
-    
-    # OAuth2 fields
     oauth2_client_id = models.CharField(max_length=255, blank=True)
     oauth2_client_secret = models.CharField(max_length=255, blank=True)
-    oauth2_auth_url = models.URLField(blank=True)
-    oauth2_token_url = models.URLField(blank=True)
-    oauth2_scope = models.CharField(max_length=255, blank=True)
     oauth2_access_token = models.TextField(blank=True)
     oauth2_refresh_token = models.TextField(blank=True)
     oauth2_token_expires_at = models.DateTimeField(null=True, blank=True)
-    
-    # Custom Auth fields - stored as JSON for flexibility
-    custom_auth_config = models.JSONField(default=dict, blank=True, help_text="Custom authentication configuration")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -49,6 +55,131 @@ class Credential(models.Model):
 
     class Meta:
         ordering = ['name']
+
+    def get_required_fields(self):
+        """
+        Returns the fields required for a credential set based on auth_type.
+        This helps the frontend know what to ask the user for.
+        """
+        if self.auth_type == 'basic':
+            return {
+                'username': {'label': 'Username', 'type': 'text', 'required': True},
+                'password': {'label': 'Password', 'type': 'password', 'required': True}
+            }
+        elif self.auth_type == 'api_key':
+            return {
+                'api_key': {'label': f'API Key (will be sent in {self.api_key_header} header)', 'type': 'password', 'required': True}
+            }
+        elif self.auth_type == 'bearer':
+            return {
+                'bearer_token': {'label': 'Bearer Token', 'type': 'password', 'required': True}
+            }
+        elif self.auth_type == 'oauth2':
+            return {
+                'client_id': {'label': 'Client ID', 'type': 'text', 'required': True},
+                'client_secret': {'label': 'Client Secret', 'type': 'password', 'required': True}
+            }
+        elif self.auth_type == 'custom':
+            # Parse custom_auth_config to determine fields
+            # Expected format: {'fields': [{'name': 'field_name', 'label': 'Field Label', 'type': 'text', 'required': True}]}
+            if self.custom_auth_config and 'fields' in self.custom_auth_config:
+                fields = {}
+                for field in self.custom_auth_config['fields']:
+                    fields[field['name']] = {
+                        'label': field.get('label', field['name']),
+                        'type': field.get('type', 'text'),
+                        'required': field.get('required', True)
+                    }
+                return fields
+            return {}
+        else:  # 'none'
+            return {}
+
+    def get_configuration_summary(self):
+        """
+        Returns a summary of the configuration (non-secret) settings.
+        """
+        config = {'auth_type': self.auth_type}
+
+        if self.auth_type == 'api_key':
+            config['api_key_header'] = self.api_key_header
+        elif self.auth_type == 'oauth2':
+            config['auth_url'] = self.oauth2_auth_url
+            config['token_url'] = self.oauth2_token_url
+            config['scope'] = self.oauth2_scope
+        elif self.auth_type == 'custom':
+            config['structure'] = self.custom_auth_config
+
+        return config
+
+
+class CredentialSet(models.Model):
+    """
+    Credential Set - actual SECRET values for a credential profile
+
+    The credential profile (Credential model) defines the STRUCTURE/CONFIGURATION.
+    The credential set stores the actual SECRET VALUES.
+
+    Examples:
+
+    1. API Key Profile:
+       - Profile stores: api_key_header = 'X-API-Key' (configuration)
+       - Credential Set stores: {'api_key': 'sk_live_abc123...'} (secret)
+
+    2. OAuth2 Profile:
+       - Profile stores: auth_url, token_url, scope (configuration)
+       - Credential Set stores: {'client_id': 'xxx', 'client_secret': 'yyy'} (secrets)
+
+    3. Basic Auth Profile:
+       - Profile stores: auth_type = 'basic' (configuration)
+       - Credential Set stores: {'username': 'user', 'password': 'pass'} (secrets)
+
+    4. Bearer Token Profile:
+       - Profile stores: auth_type = 'bearer' (configuration)
+       - Credential Set stores: {'bearer_token': 'token123...'} (secret)
+
+    5. Custom Auth Profile:
+       - Profile stores: custom_auth_config = {'fields': [{'name': 'api_token', 'type': 'string'}]} (structure)
+       - Credential Set stores: {'api_token': 'actual_token_value'} (secrets)
+    """
+    credential = models.ForeignKey(Credential, on_delete=models.CASCADE, related_name='credential_sets')
+    name = models.CharField(max_length=100, help_text="Name for this credential set (e.g., 'Production API Key', 'Staging OAuth')")
+
+    # The actual SECRET values stored as JSON
+    # Structure depends on the credential profile's auth_type:
+    # - 'basic': {'username': 'value', 'password': 'value'}
+    # - 'api_key': {'api_key': 'value'} (header name comes from profile)
+    # - 'bearer': {'bearer_token': 'value'}
+    # - 'oauth2': {'client_id': 'value', 'client_secret': 'value'} (URLs/scope from profile)
+    # - 'custom': {field_name: value, ...} (structure defined in profile's custom_auth_config)
+    credential_values = models.JSONField(default=dict, help_text="Actual secret credential values")
+
+    # Default flag - only one credential set per credential can be default
+    is_default = models.BooleanField(default=False, help_text="Is this the default credential set for this profile?")
+
+    # Owner and timestamps
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='credential_sets')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        default_label = " (Default)" if self.is_default else ""
+        return f"{self.credential.name} - {self.name}{default_label}"
+
+    class Meta:
+        ordering = ['-is_default', 'name']
+        unique_together = ['credential', 'name']
+
+    def save(self, *args, **kwargs):
+        """Override save to ensure only one default per credential"""
+        if self.is_default:
+            # Unset any other defaults for this credential
+            CredentialSet.objects.filter(
+                credential=self.credential,
+                is_default=True
+            ).exclude(pk=self.pk).update(is_default=False)
+
+        super().save(*args, **kwargs)
 
 
 class CustomAuthConfig(models.Model):
@@ -105,11 +236,23 @@ class CustomAuthConfig(models.Model):
 
 
 class Connector(models.Model):
+    CONNECTOR_TYPES = [
+        ('system', 'System Connector'),
+        ('custom', 'Custom Connector'),
+    ]
+
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     base_url = models.URLField()
     credential = models.ForeignKey(Credential, on_delete=models.CASCADE, null=True, blank=True)
-    
+    connector_type = models.CharField(max_length=10, choices=CONNECTOR_TYPES, default='custom', help_text="System or custom connector")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active', help_text="Active or inactive status")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -118,6 +261,39 @@ class Connector(models.Model):
 
     class Meta:
         ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        """Override save to cascade status changes to actions and validate credential sets"""
+        # Check if status is changing
+        if self.pk:
+            old_instance = Connector.objects.get(pk=self.pk)
+
+            # If trying to activate, check for credential sets
+            if old_instance.status == 'inactive' and self.status == 'active':
+                if self.credential:
+                    # Check if the credential has at least one credential set
+                    credential_sets_count = self.credential.credential_sets.count()
+                    if credential_sets_count == 0:
+                        from django.core.exceptions import ValidationError
+                        raise ValidationError(
+                            'Cannot activate connector: The associated credential profile must have at least one credential set. '
+                            'Please create a credential set first.'
+                        )
+
+            # Check if status is changing to inactive
+            if old_instance.status == 'active' and self.status == 'inactive':
+                # Will cascade after save
+                cascade_inactive = True
+            else:
+                cascade_inactive = False
+        else:
+            cascade_inactive = False
+
+        super().save(*args, **kwargs)
+
+        # Cascade inactive status to all actions
+        if cascade_inactive:
+            self.actions.update(status='inactive')
 
 
 class ConnectorAction(models.Model):
@@ -128,15 +304,25 @@ class ConnectorAction(models.Model):
         ('PATCH', 'PATCH'),
         ('DELETE', 'DELETE'),
     ]
-    
+
     ACTION_TYPES = [
         ('sync', 'Synchronous'),
         ('async', 'Asynchronous'),
     ]
-    
+
     ASYNC_TYPES = [
         ('polling', 'Polling-based'),
         ('webhook', 'Webhook-based'),
+    ]
+
+    ORIGIN_TYPES = [
+        ('system', 'System Action'),
+        ('custom', 'Custom Action'),
+    ]
+
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
     ]
 
     connector = models.ForeignKey(Connector, on_delete=models.CASCADE, related_name='actions')
@@ -144,9 +330,13 @@ class ConnectorAction(models.Model):
     description = models.TextField(blank=True)
     http_method = models.CharField(max_length=10, choices=HTTP_METHODS, default='GET')
     endpoint_path = models.CharField(max_length=500, help_text="Path to append to base URL with optional templates (e.g., /api/users/{userId})")
-    
+
     # Action execution type
     action_type = models.CharField(max_length=10, choices=ACTION_TYPES, default='sync', help_text="Whether this action executes synchronously or asynchronously")
+    # Action origin type
+    origin_type = models.CharField(max_length=10, choices=ORIGIN_TYPES, default='custom', help_text="System or custom action")
+    # Status
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active', help_text="Active or inactive status")
     async_type = models.CharField(max_length=10, choices=ASYNC_TYPES, blank=True, null=True, help_text="Type of async execution (only for async actions)")
     
     # Enhanced JSON fields for flexible configuration with metadata
@@ -399,3 +589,285 @@ class ConnectionTest(models.Model):
 
     class Meta:
         ordering = ['-tested_at']
+
+
+class Event(models.Model):
+    EVENT_TYPES = [
+        ('system', 'System Event'),
+        ('custom', 'Custom Event'),
+    ]
+
+    name = models.CharField(max_length=100)
+    event_id = models.IntegerField(unique=True, help_text="System-generated 7-digit unique identifier")
+    base_event_id = models.IntegerField(null=True, blank=True, help_text="Base event ID for grouping versions together")
+    version = models.IntegerField(default=1, help_text="Version number of this event")
+    event_type = models.CharField(max_length=10, choices=EVENT_TYPES, default='custom')
+    description = models.TextField(blank=True)
+
+    # Event format - JSON structure defining the exact format of the event payload
+    event_format = models.JSONField(default=dict, blank=True, help_text="JSON format specification for the event payload")
+
+    # Event acknowledgement settings
+    ACKNOWLEDGEMENT_TYPES = [
+        ('basic', 'Basic Response'),
+        ('custom', 'Custom Response'),
+    ]
+
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+
+    acknowledgement_enabled = models.BooleanField(default=False, help_text="Whether to send acknowledgement when webhook is received")
+    acknowledgement_type = models.CharField(max_length=10, choices=ACKNOWLEDGEMENT_TYPES, default='basic', help_text="Type of acknowledgement response")
+    acknowledgement_status_code = models.IntegerField(default=200, help_text="HTTP status code to return in acknowledgement")
+    acknowledgement_payload = models.JSONField(default=dict, blank=True, help_text="Payload to send in acknowledgement response (for custom type only)")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active', help_text="Event status")
+
+    # Legacy fields (keeping for backward compatibility)
+    parameters = models.JSONField(default=list, blank=True, help_text="List of parameter names in scope for this event")
+    schema = models.JSONField(default=dict, blank=True, help_text="JSON schema defining event structure")
+
+    # Metadata
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} (ID: {self.event_id})"
+
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        if not self.event_id:
+            self.event_id = self._generate_event_id()
+        # Set base_event_id to event_id for new events (only if not already set)
+        if is_new and not self.base_event_id:
+            self.base_event_id = self.event_id
+        super().save(*args, **kwargs)
+
+    def _generate_event_id(self):
+        """Generate a unique 7-digit event ID"""
+        import random
+        while True:
+            event_id = random.randint(1000000, 9999999)
+            if not Event.objects.filter(event_id=event_id).exists():
+                return event_id
+
+    def get_webhook_endpoint(self):
+        """Generate the webhook endpoint URL for this event"""
+        return f"/api/events/{self.id}/test_webhook/"
+
+    def get_latest_version(self):
+        """Get the latest version number for this event's base_event_id"""
+        return Event.objects.filter(base_event_id=self.base_event_id).aggregate(
+            models.Max('version')
+        )['version__max'] or 1
+
+    def get_all_versions(self):
+        """Get all versions of this event"""
+        return Event.objects.filter(base_event_id=self.base_event_id).order_by('-version')
+
+    class Meta:
+        ordering = ['name', '-version']
+        indexes = [
+            models.Index(fields=['base_event_id', '-version']),
+            models.Index(fields=['event_type', 'status']),
+        ]
+
+
+class Sequence(models.Model):
+    SEQUENCE_TYPES = [
+        ('system', 'System Sequence'),
+        ('custom', 'Custom Sequence'),
+    ]
+
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+
+    name = models.CharField(max_length=100)
+    sequence_id = models.IntegerField(unique=True, help_text="System-generated 7-digit unique identifier")
+    sequence_type = models.CharField(max_length=10, choices=SEQUENCE_TYPES, default='custom')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active')
+    description = models.TextField(blank=True)
+
+    # Flow data - stores the visual flow builder configuration
+    flow_nodes = models.JSONField(default=list, blank=True, help_text="ReactFlow nodes configuration")
+    flow_edges = models.JSONField(default=list, blank=True, help_text="ReactFlow edges configuration")
+    trigger_events = models.JSONField(default=list, blank=True, help_text="Events that trigger this sequence")
+    version = models.CharField(max_length=20, default='1.0', help_text="Sequence version")
+    variables = models.JSONField(default=list, blank=True, help_text="Sequence variables for storing workflow data")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='sequences')
+
+    def __str__(self):
+        return f"{self.name} ({self.sequence_id})"
+
+    def save(self, *args, **kwargs):
+        if not self.sequence_id:
+            self.sequence_id = self._generate_sequence_id()
+        super().save(*args, **kwargs)
+
+    def _generate_sequence_id(self):
+        """Generate a unique 7-digit sequence ID"""
+        import random
+        while True:
+            sequence_id = random.randint(1000000, 9999999)
+            if not Sequence.objects.filter(sequence_id=sequence_id).exists():
+                return sequence_id
+
+    class Meta:
+        ordering = ['name']
+
+
+class ActivityLog(models.Model):
+    """
+    Tracks all CRUD operations on key entities (actions, credentials, sequences, events, connectors)
+    """
+    ENTITY_TYPES = [
+        ('connector', 'Connector'),
+        ('credential', 'Credential'),
+        ('action', 'Connector Action'),
+        ('event', 'Event'),
+        ('sequence', 'Sequence'),
+    ]
+
+    ACTION_TYPES = [
+        ('created', 'Created'),
+        ('updated', 'Updated'),
+        ('deleted', 'Deleted'),
+        ('activated', 'Activated'),
+        ('deactivated', 'Deactivated'),
+    ]
+
+    # Who performed the action
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='activity_logs')
+    user_email = models.EmailField(blank=True, help_text="Cached email in case user is deleted")
+
+    # What was done
+    entity_type = models.CharField(max_length=20, choices=ENTITY_TYPES)
+    action_type = models.CharField(max_length=20, choices=ACTION_TYPES)
+    entity_id = models.IntegerField(help_text="ID of the entity that was modified")
+    entity_name = models.CharField(max_length=200, help_text="Name of the entity for quick reference")
+
+    # Details
+    message = models.TextField(help_text="Human-readable description of the action")
+    changes = models.JSONField(default=dict, blank=True, help_text="Summary of what changed (before/after values)")
+
+    # Metadata
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    def __str__(self):
+        user_str = self.user_email or 'System'
+        return f"{user_str} {self.action_type} {self.entity_type} '{self.entity_name}' at {self.created_at}"
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['entity_type', '-created_at']),
+            models.Index(fields=['action_type', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+
+class SequenceExecution(models.Model):
+    """
+    Tracks each execution of a sequence
+    """
+    STATUS_CHOICES = [
+        ('running', 'Running'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    sequence = models.ForeignKey(Sequence, on_delete=models.CASCADE, related_name='executions')
+    execution_id = models.CharField(max_length=100, unique=True, db_index=True)
+
+    # Trigger information
+    triggered_by_event = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True)
+    trigger_payload = models.JSONField(default=dict, help_text="Event payload that triggered this execution")
+
+    # Execution status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running')
+    error_message = models.TextField(blank=True)
+
+    # Timing
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    duration_ms = models.IntegerField(null=True, blank=True, help_text="Total execution time in milliseconds")
+
+    # Results
+    final_output = models.JSONField(default=dict, blank=True, help_text="Final output/results of the sequence")
+    variables_state = models.JSONField(default=dict, blank=True, help_text="Final state of sequence variables")
+
+    def __str__(self):
+        return f"{self.sequence.name} - {self.execution_id} ({self.status})"
+
+    class Meta:
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(fields=['sequence', '-started_at']),
+            models.Index(fields=['status', '-started_at']),
+        ]
+
+
+class ExecutionLog(models.Model):
+    """
+    Detailed logs for each node execution within a sequence execution
+    """
+    LOG_LEVELS = [
+        ('info', 'Info'),
+        ('success', 'Success'),
+        ('warning', 'Warning'),
+        ('error', 'Error'),
+    ]
+
+    NODE_TYPES = [
+        ('trigger', 'Trigger'),
+        ('action', 'Action'),
+        ('condition', 'Condition'),
+        ('event', 'Event'),
+        ('custom_rule', 'Custom Rule'),
+    ]
+
+    sequence_execution = models.ForeignKey(SequenceExecution, on_delete=models.CASCADE, related_name='logs')
+
+    # Node information
+    node_id = models.CharField(max_length=100, help_text="ID of the node in the flow")
+    node_type = models.CharField(max_length=20, choices=NODE_TYPES)
+    node_name = models.CharField(max_length=200, blank=True, help_text="Display name of the node")
+
+    # Log details
+    log_level = models.CharField(max_length=10, choices=LOG_LEVELS, default='info')
+    message = models.TextField(help_text="Log message describing what happened")
+
+    # Execution details
+    status = models.CharField(max_length=20, default='started')  # started, completed, failed, skipped
+    input_data = models.JSONField(default=dict, blank=True, help_text="Input data for this node")
+    output_data = models.JSONField(default=dict, blank=True, help_text="Output data from this node")
+    error_details = models.JSONField(default=dict, blank=True, help_text="Error details if node failed")
+
+    # Timing
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    duration_ms = models.IntegerField(null=True, blank=True)
+
+    # Additional context
+    metadata = models.JSONField(default=dict, blank=True, help_text="Additional metadata like retry count, API response, etc.")
+
+    def __str__(self):
+        return f"{self.sequence_execution.execution_id} - {self.node_name} ({self.log_level})"
+
+    class Meta:
+        ordering = ['sequence_execution', 'started_at']
+        indexes = [
+            models.Index(fields=['sequence_execution', 'started_at']),
+            models.Index(fields=['log_level', 'started_at']),
+        ]

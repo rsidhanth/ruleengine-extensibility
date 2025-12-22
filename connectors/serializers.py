@@ -1,5 +1,27 @@
 from rest_framework import serializers
-from .models import Credential, Connector, ConnectorAction, ConnectionTest, CustomAuthConfig
+from .models import (
+    Credential, CredentialSet, Connector, ConnectorAction, ConnectionTest, CustomAuthConfig, Event, Sequence,
+    ActivityLog, SequenceExecution, ExecutionLog
+)
+
+
+class CredentialSetSerializer(serializers.ModelSerializer):
+    credential_name = serializers.CharField(source='credential.name', read_only=True)
+    created_by_email = serializers.CharField(source='created_by.email', read_only=True)
+
+    class Meta:
+        model = CredentialSet
+        fields = '__all__'
+        extra_kwargs = {
+            'credential_values': {'write_only': True},
+        }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Mask sensitive credential values in responses
+        if data.get('credential_values'):
+            data['credential_values'] = '***masked***'
+        return data
 
 
 class CustomAuthConfigSerializer(serializers.ModelSerializer):
@@ -23,10 +45,16 @@ class CustomAuthConfigSerializer(serializers.ModelSerializer):
 
 class CredentialSerializer(serializers.ModelSerializer):
     custom_auth_configs = CustomAuthConfigSerializer(many=True, read_only=True)
+    credential_sets = CredentialSetSerializer(many=True, read_only=True)
+    credential_sets_count = serializers.SerializerMethodField()
+    required_fields = serializers.SerializerMethodField()
+    configuration = serializers.SerializerMethodField()
+
     class Meta:
         model = Credential
         fields = '__all__'
         extra_kwargs = {
+            # Legacy secret fields - write only for backward compatibility
             'password': {'write_only': True},
             'api_key': {'write_only': True},
             'bearer_token': {'write_only': True},
@@ -34,6 +62,17 @@ class CredentialSerializer(serializers.ModelSerializer):
             'oauth2_access_token': {'write_only': True},
             'oauth2_refresh_token': {'write_only': True},
         }
+
+    def get_credential_sets_count(self, obj):
+        return obj.credential_sets.count()
+
+    def get_required_fields(self, obj):
+        """Returns the fields required for creating a credential set"""
+        return obj.get_required_fields()
+
+    def get_configuration(self, obj):
+        """Returns the configuration (non-secret) settings"""
+        return obj.get_configuration_summary()
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -62,10 +101,25 @@ class ConnectorActionSerializer(serializers.ModelSerializer):
 class ConnectorSerializer(serializers.ModelSerializer):
     actions = ConnectorActionSerializer(many=True, read_only=True)
     credential_name = serializers.CharField(source='credential.name', read_only=True)
+    credential_sets = serializers.SerializerMethodField()
+    credential_sets_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Connector
         fields = '__all__'
+
+    def get_credential_sets(self, obj):
+        """Return list of credential sets for this connector's credential"""
+        if obj.credential:
+            sets = obj.credential.credential_sets.all()
+            return [{'id': s.id, 'name': s.name, 'is_default': s.is_default} for s in sets]
+        return []
+
+    def get_credential_sets_count(self, obj):
+        """Return count of credential sets"""
+        if obj.credential:
+            return obj.credential.credential_sets.count()
+        return 0
 
 
 class ConnectionTestSerializer(serializers.ModelSerializer):
@@ -100,3 +154,80 @@ class TestCustomAuthSerializer(serializers.Serializer):
     api_query_params = serializers.JSONField(required=False, default=dict)
     api_body = serializers.JSONField(required=False, default=dict)
     response_path = serializers.CharField(max_length=200, required=False)
+
+
+class EventSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+    webhook_endpoint = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Event
+        fields = '__all__'
+        read_only_fields = ('event_id', 'created_by', 'created_at', 'updated_at')
+
+    def get_webhook_endpoint(self, obj):
+        """Return the full webhook endpoint URL"""
+        request = self.context.get('request')
+        if request:
+            relative_url = obj.get_webhook_endpoint()
+            return request.build_absolute_uri(relative_url)
+        return obj.get_webhook_endpoint()
+
+
+class SequenceSerializer(serializers.ModelSerializer):
+    created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = Sequence
+        fields = '__all__'
+        read_only_fields = ('sequence_id', 'created_by', 'created_at', 'updated_at')
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    user_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ActivityLog
+        fields = '__all__'
+        read_only_fields = ('created_at',)
+
+    def get_user_email(self, obj):
+        """Return cached email or user email"""
+        if obj.user_email:
+            return obj.user_email
+        return obj.user.email if obj.user else 'System'
+
+
+class ExecutionLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExecutionLog
+        fields = '__all__'
+        read_only_fields = ('started_at', 'completed_at', 'duration_ms')
+
+
+class SequenceExecutionSerializer(serializers.ModelSerializer):
+    sequence_name = serializers.CharField(source='sequence.name', read_only=True)
+    sequence_id = serializers.IntegerField(source='sequence.sequence_id', read_only=True)
+    event_name = serializers.CharField(source='triggered_by_event.name', read_only=True, allow_null=True)
+    logs = ExecutionLogSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SequenceExecution
+        fields = '__all__'
+        read_only_fields = ('started_at', 'completed_at', 'duration_ms')
+
+
+class SequenceExecutionListSerializer(serializers.ModelSerializer):
+    """Lighter serializer for list views (without logs)"""
+    sequence_name = serializers.CharField(source='sequence.name', read_only=True)
+    sequence_id = serializers.IntegerField(source='sequence.sequence_id', read_only=True)
+    event_name = serializers.CharField(source='triggered_by_event.name', read_only=True, allow_null=True)
+    log_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SequenceExecution
+        fields = '__all__'
+        read_only_fields = ('started_at', 'completed_at', 'duration_ms')
+
+    def get_log_count(self, obj):
+        return obj.logs.count()

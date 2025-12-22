@@ -14,25 +14,46 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Badge,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
+  VpnKey as KeyIcon,
 } from '@mui/icons-material';
 import { credentialsApi } from '../services/api';
 import CredentialForm from '../components/CredentialForm';
+import CredentialSetsManager from '../components/CredentialSetsManager';
 
-const Credentials = () => {
+const Credentials = ({ selectedCredential: initialSelectedCredential, onClearSelectedCredential }) => {
   const [credentials, setCredentials] = useState([]);
   const [formOpen, setFormOpen] = useState(false);
   const [selectedCredential, setSelectedCredential] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [setsManagerOpen, setSetsManagerOpen] = useState(false);
+  const [selectedCredentialForSets, setSelectedCredentialForSets] = useState(null);
 
   useEffect(() => {
     loadCredentials();
   }, []);
+
+  useEffect(() => {
+    // If a credential was passed from navigation, open its sets manager
+    if (initialSelectedCredential && credentials.length > 0) {
+      const fullCredential = credentials.find(c => c.id === initialSelectedCredential.id);
+      if (fullCredential) {
+        setSelectedCredentialForSets(fullCredential);
+        setSetsManagerOpen(true);
+        // Clear the selected credential in parent to prevent reopening
+        if (onClearSelectedCredential) {
+          onClearSelectedCredential();
+        }
+      }
+    }
+  }, [initialSelectedCredential, credentials, onClearSelectedCredential]);
 
   const loadCredentials = async () => {
     try {
@@ -75,6 +96,16 @@ const Credentials = () => {
     loadCredentials();
   };
 
+  const handleManageSets = (credential) => {
+    setSelectedCredentialForSets(credential);
+    setSetsManagerOpen(true);
+  };
+
+  const handleCloseSetsManager = () => {
+    setSetsManagerOpen(false);
+    setSelectedCredentialForSets(null);
+    loadCredentials(); // Reload to update counts
+  };
 
   const getAuthTypeColor = (authType) => {
     switch (authType) {
@@ -82,8 +113,13 @@ const Credentials = () => {
       case 'api_key': return 'secondary';
       case 'bearer': return 'success';
       case 'oauth2': return 'info';
+      case 'custom': return 'warning';
       default: return 'default';
     }
+  };
+
+  const getCredentialTypeColor = (credType) => {
+    return credType === 'system' ? 'success' : 'default';
   };
 
   if (loading) return <Typography>Loading...</Typography>;
@@ -110,8 +146,9 @@ const Credentials = () => {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell>Authentication Type</TableCell>
+              <TableCell>Type</TableCell>
+              <TableCell>Auth Type</TableCell>
+              <TableCell>Credential Sets</TableCell>
               <TableCell>Created</TableCell>
               <TableCell align="center">Operations</TableCell>
             </TableRow>
@@ -123,19 +160,42 @@ const Credentials = () => {
                   <Typography variant="subtitle1" fontWeight="medium">
                     {credential.name}
                   </Typography>
+                  {credential.description && (
+                    <Typography variant="body2" color="textSecondary">
+                      {credential.description}
+                    </Typography>
+                  )}
                 </TableCell>
                 <TableCell>
-                  <Typography variant="body2" color="textSecondary">
-                    {credential.description || 'No description'}
-                  </Typography>
+                  <Chip
+                    label={credential.credential_type === 'system' ? 'System' : 'Custom'}
+                    size="small"
+                    color={getCredentialTypeColor(credential.credential_type)}
+                    variant="filled"
+                  />
                 </TableCell>
                 <TableCell>
-                  <Chip 
+                  <Chip
                     label={credential.auth_type.replace('_', ' ').toUpperCase()}
                     size="small"
                     color={getAuthTypeColor(credential.auth_type)}
                     variant="outlined"
                   />
+                </TableCell>
+                <TableCell>
+                  <Tooltip title="Manage credential sets">
+                    <Button
+                      size="small"
+                      startIcon={
+                        <Badge badgeContent={credential.credential_sets_count || 0} color="primary">
+                          <KeyIcon />
+                        </Badge>
+                      }
+                      onClick={() => handleManageSets(credential)}
+                    >
+                      Manage Sets
+                    </Button>
+                  </Tooltip>
                 </TableCell>
                 <TableCell>
                   <Typography variant="body2" color="textSecondary">
@@ -144,21 +204,23 @@ const Credentials = () => {
                 </TableCell>
                 <TableCell align="center">
                   <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleEdit(credential)}
-                      title="Edit"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(credential.id)}
-                      title="Delete"
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+                    <Tooltip title="Edit Profile">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleEdit(credential)}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(credential.id)}
+                        color="error"
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                 </TableCell>
               </TableRow>
@@ -186,6 +248,12 @@ const Credentials = () => {
         onClose={() => setFormOpen(false)}
         onSave={handleSave}
         credential={selectedCredential}
+      />
+
+      <CredentialSetsManager
+        open={setsManagerOpen}
+        onClose={handleCloseSetsManager}
+        credential={selectedCredentialForSets}
       />
     </Container>
   );
