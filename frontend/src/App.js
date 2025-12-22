@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ThemeProvider,
   createTheme,
@@ -14,6 +14,8 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
+  Alert,
+  Snackbar,
 } from '@mui/material';
 import {
   Settings as ConnectorsIcon,
@@ -36,6 +38,7 @@ import ActivityLogs from './pages/ActivityLogs';
 import ExecutionLogs from './pages/ExecutionLogs';
 import ExecutionDetails from './pages/ExecutionDetails';
 import ApiCallLogViewer from './components/ApiCallLogViewer';
+import api from './services/api';
 
 const theme = createTheme({
   palette: {
@@ -56,6 +59,27 @@ function App() {
   const [selectedCredentialForSets, setSelectedCredentialForSets] = useState(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState(null);
   const [apiLogsOpen, setApiLogsOpen] = useState(false);
+  const [apiError, setApiError] = useState(null);
+
+  useEffect(() => {
+    // Test API connection on mount
+    const testConnection = async () => {
+      try {
+        await api.get('/workflows/');
+      } catch (error) {
+        console.error('API Connection Error:', error);
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+        setApiError(
+          `Cannot connect to backend at ${apiUrl}. ${
+            error.response
+              ? `Server returned ${error.response.status}`
+              : 'Please check if the backend is running and REACT_APP_API_URL is set correctly.'
+          }`
+        );
+      }
+    };
+    testConnection();
+  }, []);
 
   const handleNavigateToActions = (connector) => {
     setSelectedConnector(connector);
@@ -234,6 +258,26 @@ function App() {
           open={apiLogsOpen}
           onClose={() => setApiLogsOpen(false)}
         />
+
+        {/* API Connection Error Snackbar */}
+        <Snackbar
+          open={!!apiError}
+          autoHideDuration={null}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert
+            severity="error"
+            onClose={() => setApiError(null)}
+            sx={{ width: '100%', maxWidth: 600 }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
+              Backend Connection Error
+            </Typography>
+            <Typography variant="body2">
+              {apiError}
+            </Typography>
+          </Alert>
+        </Snackbar>
       </Box>
     </ThemeProvider>
   );
