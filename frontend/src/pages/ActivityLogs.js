@@ -205,7 +205,12 @@ const ActivityLogs = () => {
                         <Typography variant="body2">{formatDate(log.created_at)}</Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">{log.user_email || 'System'}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {log.user_email || 'abc@company.com'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                          {log.user_info || 'N/A'}
+                        </Typography>
                       </TableCell>
                       <TableCell>
                         <Chip

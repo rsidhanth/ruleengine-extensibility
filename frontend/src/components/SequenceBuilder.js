@@ -32,11 +32,12 @@ import {
   AccountTree as ApiIcon,
   CallSplit as ConditionIcon,
   Code as DslIcon,
-  MergeType as ParallelIcon,
+  MergeType as MergeIcon,
   FlashOn as EventIcon,
   Schedule as ScheduleIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
+  AccountTree as ParallelIcon,
 } from '@mui/icons-material';
 import { eventsApi, sequencesApi } from '../services/api';
 import ConditionNode from './nodes/ConditionNode';
@@ -45,6 +46,8 @@ import ActionNode from './nodes/ActionNode';
 import EventTriggerNode from './nodes/EventTriggerNode';
 import EventNode from './nodes/EventNode';
 import CustomRuleNode from './nodes/CustomRuleNode';
+import ParallelNode from './nodes/ParallelNode';
+import MergeNode from './nodes/MergeNode';
 import ConditionConfigDrawer from './ConditionConfigDrawer';
 import APIConfigDrawer from './APIConfigDrawer';
 import ActionConfigDrawer from './ActionConfigDrawer';
@@ -82,6 +85,20 @@ const nodeTypes = [
     description: 'Run custom DSL script logic',
     icon: <DslIcon fontSize="small" />,
     color: '#3b82f6'
+  },
+  {
+    type: 'parallel',
+    label: 'Parallel',
+    description: 'Execute branches in parallel',
+    icon: <ParallelIcon fontSize="small" />,
+    color: '#f59e0b'
+  },
+  {
+    type: 'merge',
+    label: 'Merge',
+    description: 'Wait for parallel branches to complete',
+    icon: <MergeIcon fontSize="small" />,
+    color: '#06b6d4'
   },
 ];
 
@@ -125,6 +142,8 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
     event_trigger: EventTriggerNode,
     event: EventNode,
     custom_rule: CustomRuleNode,
+    parallel: ParallelNode,
+    merge: MergeNode,
   }), []);
 
 
@@ -325,13 +344,20 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
       // Load existing nodes and edges
       console.log('Loading nodes from sequenceData:', sequenceData.flow_nodes);
       setNodes(sequenceData.flow_nodes.map(node => {
+        // Clean up any serialized React elements or invalid data
+        const cleanData = { ...node.data };
+        // Remove label if it's an object (serialized React element)
+        if (cleanData.label && typeof cleanData.label === 'object') {
+          delete cleanData.label;
+        }
+
         // Special handling for trigger node
         if (node.type === 'event_trigger' || node.id === 'trigger_node') {
           return {
             ...node,
             data: {
-              ...node.data,
-              triggerEvents: triggerEvents.length > 0 ? triggerEvents : node.data.triggerEvents || [],
+              ...cleanData,
+              triggerEvents: triggerEvents.length > 0 ? triggerEvents : cleanData.triggerEvents || [],
               onSettingsClick: () => setEventDetailsDrawerOpen(true),
               onEditClick: () => setShowEventSelector(!showEventSelector),
               onViewAllClick: () => setShowAllEventsModal(true),
@@ -343,7 +369,7 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
         return {
           ...node,
           data: {
-            ...node.data,
+            ...cleanData,
             onSettingsClick: handleNodeSettingsClick,
           }
         };
@@ -429,8 +455,8 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
         y: event.clientY,
       });
 
-      // Create node with custom type if it's condition, api_call, action, event, or custom_rule
-      const useCustomNode = type === 'condition' || type === 'api_call' || type === 'action' || type === 'event' || type === 'custom_rule';
+      // Create node with custom type if it's condition, api_call, action, event, custom_rule, parallel, or merge
+      const useCustomNode = type === 'condition' || type === 'api_call' || type === 'action' || type === 'event' || type === 'custom_rule' || type === 'parallel' || type === 'merge';
 
       console.log('Creating node with type:', type, 'useCustomNode:', useCustomNode, 'handler:', handleNodeSettingsClick);
 
@@ -510,9 +536,20 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
 
   const handleSave = async (action) => {
     try {
+      // Sanitize nodes before saving - remove functions and React elements
+      const sanitizedNodes = nodes.map(node => {
+        const { data, ...nodeRest } = node;
+        const { onSettingsClick, onEditClick, onViewAllClick, label, ...dataRest } = data || {};
+
+        return {
+          ...nodeRest,
+          data: dataRest
+        };
+      });
+
       const sequenceUpdateData = {
         ...sequenceData,
-        flow_nodes: nodes,
+        flow_nodes: sanitizedNodes,
         flow_edges: edges,
         trigger_events: triggerEvents.map(e => e.id),
         variables: variables,
@@ -1087,6 +1124,8 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
         }}
         nodeData={selectedNodeForConfig?.data}
         onSave={handleEventSave}
+        triggerEvents={triggerEvents}
+        sequenceVariables={variables}
       />
 
       {/* DSL Configuration Drawer */}

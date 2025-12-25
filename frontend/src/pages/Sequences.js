@@ -28,6 +28,8 @@ import {
   ContentCopy as DuplicateIcon,
   PlayArrow as ExecuteIcon,
   BugReport as TestIcon,
+  FileDownload as ExportIcon,
+  FileUpload as ImportIcon,
 } from '@mui/icons-material';
 import { sequencesApi } from '../services/api';
 import SequenceForm from '../components/SequenceForm';
@@ -35,6 +37,9 @@ import SequenceBuilder from '../components/SequenceBuilder';
 import SequenceTypeSelector from '../components/SequenceTypeSelector';
 import TemplateSelector from '../components/TemplateSelector';
 import SequenceTestModal from '../components/SequenceTestModal';
+import ImportModal from '../components/ImportModal';
+import NameConflictDialog from '../components/NameConflictDialog';
+import DependencyErrorDialog from '../components/DependencyErrorDialog';
 
 const Sequences = () => {
   const [sequences, setSequences] = useState([]);
@@ -50,6 +55,10 @@ const Sequences = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [testingSequence, setTestingSequence] = useState(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [nameConflictData, setNameConflictData] = useState(null);
+  const [dependencyErrorData, setDependencyErrorData] = useState(null);
+  const [importDataCache, setImportDataCache] = useState(null);
 
   useEffect(() => {
     loadSequences();
@@ -238,6 +247,103 @@ const Sequences = () => {
     return status === 'active' ? 'Active' : 'Inactive';
   };
 
+  const handleExport = async (sequence) => {
+    try {
+      const response = await sequencesApi.export(sequence.id);
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sequence-${sequence.name}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSnackbar({ open: true, message: 'Sequence exported successfully' });
+    } catch (err) {
+      setError('Failed to export sequence');
+    }
+  };
+
+  const handleImport = async (file, overrides = {}) => {
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      setImportDataCache(importData);
+
+      // First validate dependencies
+      const validationResponse = await sequencesApi.validateImport(importData);
+
+      if (!validationResponse.data.valid) {
+        setDependencyErrorData(validationResponse.data.missing_dependencies);
+        setImportModalOpen(false);
+        return;
+      }
+
+      // If validation passes, proceed with import
+      const requestData = {
+        ...importData,
+        ...overrides
+      };
+
+      const response = await sequencesApi.import(requestData);
+
+      if (response.data.success) {
+        setSnackbar({ open: true, message: 'Sequence imported successfully' });
+        loadSequences();
+        setImportDataCache(null);
+        setImportModalOpen(false);
+      }
+    } catch (err) {
+      const errorType = err.response?.data?.error;
+
+      if (errorType === 'name_conflict') {
+        setNameConflictData({
+          data: err.response.data,
+          originalData: importDataCache || JSON.parse(await file.text())
+        });
+        setImportModalOpen(false);
+      } else if (errorType === 'missing_dependencies') {
+        setDependencyErrorData(err.response.data.details);
+        setImportModalOpen(false);
+      } else {
+        setError(err.response?.data?.message || 'Import failed');
+        setImportDataCache(null);
+      }
+    }
+  };
+
+  const handleConflictResolve = async (newName) => {
+    try {
+      const requestData = {
+        ...importDataCache,
+        name_override: newName
+      };
+
+      const response = await sequencesApi.import(requestData);
+
+      if (response.data.success) {
+        setSnackbar({ open: true, message: 'Sequence imported successfully' });
+        loadSequences();
+        setImportDataCache(null);
+      }
+    } catch (err) {
+      const errorType = err.response?.data?.error;
+      if (errorType === 'name_conflict') {
+        setNameConflictData({
+          data: err.response.data,
+          originalData: importDataCache
+        });
+      } else if (errorType === 'missing_dependencies') {
+        setDependencyErrorData(err.response.data.details);
+      } else {
+        setError(err.response?.data?.message || 'Import failed');
+        setImportDataCache(null);
+      }
+    } finally {
+      setNameConflictData(null);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -262,13 +368,22 @@ const Sequences = () => {
         <Typography variant="h4" component="h1">
           Sequences
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleCreate}
-        >
-          Create Sequence
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ImportIcon />}
+            onClick={() => setImportModalOpen(true)}
+          >
+            Import
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleCreate}
+          >
+            Create Sequence
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -335,6 +450,15 @@ const Sequences = () => {
                     />
                   </TableCell>
                   <TableCell align="right">
+                    <Tooltip title="Export sequence">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleExport(sequence)}
+                        color="info"
+                      >
+                        <ExportIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="View sequence">
                       <IconButton
                         size="small"
@@ -423,6 +547,35 @@ const Sequences = () => {
         open={testModalOpen}
         onClose={() => setTestModalOpen(false)}
         sequence={testingSequence}
+      />
+
+      <ImportModal
+        open={importModalOpen}
+        onClose={() => {
+          setImportModalOpen(false);
+          setImportDataCache(null);
+        }}
+        onImport={handleImport}
+        title="Import Sequence"
+      />
+
+      <NameConflictDialog
+        open={!!nameConflictData}
+        onClose={() => {
+          setNameConflictData(null);
+          // Don't clear importDataCache here - it's needed for retry in handleConflictResolve
+        }}
+        onConfirm={handleConflictResolve}
+        conflictData={nameConflictData?.data}
+      />
+
+      <DependencyErrorDialog
+        open={!!dependencyErrorData}
+        onClose={() => {
+          setDependencyErrorData(null);
+          setImportDataCache(null);
+        }}
+        missingDependencies={dependencyErrorData}
       />
 
       <Snackbar

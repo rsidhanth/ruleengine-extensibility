@@ -112,14 +112,35 @@ const ActionNode = ({ data, id }) => {
           px: 2,
           py: 2,
           minHeight: 60,
+          position: 'relative',
         }}
       >
+        {/* Node ID Badge */}
+        <Chip
+          label={id}
+          size="small"
+          sx={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            height: '18px',
+            fontSize: '0.65rem',
+            fontFamily: 'monospace',
+            backgroundColor: '#f3f4f6',
+            color: '#6b7280',
+            fontWeight: 600,
+            '& .MuiChip-label': {
+              px: 0.75,
+            },
+          }}
+        />
+
         {!hasConfig ? (
-          <Typography variant="body2" sx={{ color: '#9ca3af', fontSize: '0.8rem', fontStyle: 'italic' }}>
+          <Typography variant="body2" sx={{ color: '#9ca3af', fontSize: '0.8rem', fontStyle: 'italic', pr: 6 }}>
             Click settings to configure action
           </Typography>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pr: 6 }}>
             <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.7rem' }}>
               {actionConfig.connectorName}
             </Typography>

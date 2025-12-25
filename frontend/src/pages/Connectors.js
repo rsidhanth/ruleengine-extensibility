@@ -23,9 +23,13 @@ import {
   Edit as EditIcon,
   Delete as DeleteIcon,
   Settings as ActionsIcon,
+  FileDownload as ExportIcon,
+  FileUpload as ImportIcon,
 } from '@mui/icons-material';
 import { connectorsApi } from '../services/api';
 import ConnectorForm from '../components/ConnectorForm';
+import ImportModal from '../components/ImportModal';
+import ConnectorConflictDialog from '../components/ConnectorConflictDialog';
 
 const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const [connectors, setConnectors] = useState([]);
@@ -33,6 +37,10 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const [selectedConnector, setSelectedConnector] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [connectorConflictData, setConnectorConflictData] = useState(null);
+  const [importDataCache, setImportDataCache] = useState(null);
 
   useEffect(() => {
     loadConnectors();
@@ -111,6 +119,105 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
     return type === 'system' ? 'success' : 'default';
   };
 
+  const handleExport = async (connector) => {
+    try {
+      const response = await connectorsApi.export(connector.id);
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `connector-${connector.name}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSuccessMessage('Connector exported successfully');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      setError('Failed to export connector');
+    }
+  };
+
+  const handleImport = async (file, overrides = {}) => {
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      setImportDataCache(importData);
+
+      const requestData = {
+        ...importData,
+        ...overrides
+      };
+
+      const response = await connectorsApi.import(requestData);
+
+      if (response.data.success) {
+        const messages = ['Connector imported successfully'];
+        if (response.data.credential_profile_created) {
+          messages.push('New credential profile created');
+        } else if (response.data.credential_profile_reused) {
+          messages.push('Using existing credential profile');
+        }
+        setSuccessMessage(messages.join('. '));
+        setTimeout(() => setSuccessMessage(''), 5000);
+        loadConnectors();
+        setImportDataCache(null);
+        setImportModalOpen(false);
+      }
+    } catch (err) {
+      const errorType = err.response?.data?.error;
+
+      if (errorType === 'connector_name_conflict' || errorType === 'credential_name_conflict') {
+        setConnectorConflictData({
+          type: err.response.data.conflict_type,
+          data: err.response.data,
+          originalData: importDataCache || JSON.parse(await file.text())
+        });
+        setImportModalOpen(false);
+      } else {
+        setError(err.response?.data?.message || 'Import failed');
+        setImportDataCache(null);
+      }
+    }
+  };
+
+  const handleConflictResolve = async (resolution) => {
+    try {
+      const requestData = {
+        ...importDataCache,
+        ...resolution
+      };
+
+      const response = await connectorsApi.import(requestData);
+
+      if (response.data.success) {
+        const messages = ['Connector imported successfully'];
+        if (response.data.credential_profile_created) {
+          messages.push('New credential profile created');
+        } else if (response.data.credential_profile_reused) {
+          messages.push('Using existing credential profile');
+        }
+        setSuccessMessage(messages.join('. '));
+        setTimeout(() => setSuccessMessage(''), 5000);
+        loadConnectors();
+        setImportDataCache(null);
+      }
+    } catch (err) {
+      const errorType = err.response?.data?.error;
+      if (errorType === 'connector_name_conflict' || errorType === 'credential_name_conflict') {
+        setConnectorConflictData({
+          type: err.response.data.conflict_type,
+          data: err.response.data,
+          originalData: importDataCache
+        });
+      } else {
+        setError(err.response?.data?.message || 'Import failed');
+        setImportDataCache(null);
+      }
+    } finally {
+      setConnectorConflictData(null);
+    }
+  };
+
   if (loading) return <Typography>Loading...</Typography>;
 
   return (
@@ -119,16 +226,26 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
         <Typography variant="h4" component="h1">
           Connectors
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleCreate}
-        >
-          Add Connector
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ImportIcon />}
+            onClick={() => setImportModalOpen(true)}
+          >
+            Import
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleCreate}
+          >
+            Add Connector
+          </Button>
+        </Box>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
 
       <TableContainer component={Paper}>
         <Table>
@@ -225,6 +342,15 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
                 </TableCell>
                 <TableCell align="center">
                   <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+                    <Tooltip title="Export">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleExport(connector)}
+                        color="info"
+                      >
+                        <ExportIcon />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Edit">
                       <IconButton
                         size="small"
@@ -278,6 +404,26 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
         onClose={() => setFormOpen(false)}
         onSave={handleSave}
         connector={selectedConnector}
+      />
+
+      <ImportModal
+        open={importModalOpen}
+        onClose={() => {
+          setImportModalOpen(false);
+          setImportDataCache(null);
+        }}
+        onImport={handleImport}
+        title="Import Connector"
+      />
+
+      <ConnectorConflictDialog
+        open={!!connectorConflictData}
+        onClose={() => {
+          setConnectorConflictData(null);
+          setImportDataCache(null);
+        }}
+        onConfirm={handleConflictResolve}
+        conflictData={connectorConflictData}
       />
     </Container>
   );

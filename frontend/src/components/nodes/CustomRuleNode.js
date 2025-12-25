@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position } from 'reactflow';
-import { Box, Typography, IconButton } from '@mui/material';
+import { Box, Typography, IconButton, Chip } from '@mui/material';
 import { Settings as SettingsIcon, Code as CodeIcon } from '@mui/icons-material';
 
 const CustomRuleNode = ({ data, id }) => {
@@ -97,7 +97,27 @@ const CustomRuleNode = ({ data, id }) => {
       </Box>
 
       {/* Body */}
-      <Box sx={{ backgroundColor: '#ffffff', color: '#374151', p: 2, minHeight: 60 }}>
+      <Box sx={{ backgroundColor: '#ffffff', color: '#374151', p: 2, minHeight: 60, position: 'relative' }}>
+        {/* Node ID Badge */}
+        <Chip
+          label={id}
+          size="small"
+          sx={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            height: '18px',
+            fontSize: '0.65rem',
+            fontFamily: 'monospace',
+            backgroundColor: '#f3f4f6',
+            color: '#6b7280',
+            fontWeight: 600,
+            '& .MuiChip-label': {
+              px: 0.75,
+            },
+          }}
+        />
+
         {!hasCustomRuleConfig ? (
           <Typography
             variant="body2"
@@ -105,12 +125,13 @@ const CustomRuleNode = ({ data, id }) => {
               color: '#9ca3af',
               fontSize: '0.8rem',
               fontStyle: 'italic',
+              pr: 6,
             }}
           >
             Click settings to configure custom rule
           </Typography>
         ) : (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pr: 6 }}>
             <Typography
               variant="body2"
               sx={{

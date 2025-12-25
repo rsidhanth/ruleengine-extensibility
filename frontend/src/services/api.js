@@ -37,6 +37,8 @@ export const connectorsApi = {
   test: (id, data = {}) => api.post(`/connectors/${id}/test/`, data),
   executeAction: (id, data) => api.post(`/connectors/${id}/execute_action/`, data),
   toggleStatus: (id) => api.post(`/connectors/${id}/toggle_status/`),
+  export: (id) => api.get(`/connectors/${id}/export/`),
+  import: (data) => api.post('/connectors/import_connector/', data),
 };
 
 export const actionsApi = {
@@ -109,6 +111,8 @@ export const eventsApi = {
   getTestEndpoint: (id) => api.get(`/events/${id}/test_endpoint/`),
   getTestPayload: (id) => api.get(`/events/${id}/test_payload/`),
   getSamplePayload: (id) => api.get(`/events/${id}/sample_payload/`),
+  export: (id) => api.get(`/events/${id}/export/`),
+  import: (data) => api.post('/events/import_event/', data),
 };
 
 export const sequencesApi = {
@@ -121,6 +125,9 @@ export const sequencesApi = {
   execute: (id, triggerData = {}) => api.post(`/sequences/${id}/execute/`, { trigger_data: triggerData }),
   getTestInfo: (id) => api.get(`/sequences/${id}/test_info/`),
   getTestStatus: (id) => api.get(`/sequences/${id}/test_status/`),
+  export: (id) => api.get(`/sequences/${id}/export/`),
+  validateImport: (data) => api.post('/sequences/validate_import/', data),
+  import: (data) => api.post('/sequences/import_sequence/', data),
 };
 
 export const activityLogsApi = {

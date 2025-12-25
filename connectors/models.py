@@ -760,6 +760,9 @@ class ActivityLog(models.Model):
     # Metadata
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=500, blank=True)
+    user_os = models.CharField(max_length=100, blank=True, help_text="Operating system of the user")
+    user_device = models.CharField(max_length=100, blank=True, help_text="Device type (desktop, mobile, tablet, etc.)")
+    user_browser = models.CharField(max_length=100, blank=True, help_text="Browser used by the user")
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -793,6 +796,12 @@ class SequenceExecution(models.Model):
     # Trigger information
     triggered_by_event = models.ForeignKey(Event, on_delete=models.SET_NULL, null=True, blank=True)
     trigger_payload = models.JSONField(default=dict, help_text="Event payload that triggered this execution")
+
+    # Trigger source information
+    trigger_ip = models.GenericIPAddressField(null=True, blank=True, help_text="IP address that triggered the event")
+    trigger_os = models.CharField(max_length=100, blank=True, help_text="Operating system of the triggering device")
+    trigger_device = models.CharField(max_length=100, blank=True, help_text="Device type (desktop, mobile, tablet, etc.)")
+    trigger_browser = models.CharField(max_length=100, blank=True, help_text="Browser used to trigger the event")
 
     # Execution status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='running')

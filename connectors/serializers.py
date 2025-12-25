@@ -156,6 +156,48 @@ class TestCustomAuthSerializer(serializers.Serializer):
     response_path = serializers.CharField(max_length=200, required=False)
 
 
+# Export/Import Serializers
+
+class CredentialProfileExportSerializer(serializers.ModelSerializer):
+    """Serializer for exporting credential profiles - excludes secrets"""
+    class Meta:
+        model = Credential
+        exclude = ['id', 'created_at', 'updated_at', 'password', 'api_key', 'bearer_token',
+                  'oauth2_client_secret', 'oauth2_access_token', 'oauth2_refresh_token',
+                  'oauth2_token_expires_at']
+
+
+class ConnectorActionExportSerializer(serializers.ModelSerializer):
+    """Serializer for exporting connector actions"""
+    class Meta:
+        model = ConnectorAction
+        exclude = ['id', 'connector', 'created_at', 'updated_at']
+
+
+class ConnectorExportSerializer(serializers.ModelSerializer):
+    """Serializer for exporting connectors with credential profile and actions"""
+    credential_profile = CredentialProfileExportSerializer(source='credential', read_only=True)
+    actions = ConnectorActionExportSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Connector
+        exclude = ['id', 'credential', 'created_at', 'updated_at']
+
+
+class EventExportSerializer(serializers.ModelSerializer):
+    """Serializer for exporting events"""
+    class Meta:
+        model = Event
+        exclude = ['id', 'event_id', 'base_event_id', 'created_by', 'created_at', 'updated_at']
+
+
+class SequenceExportSerializer(serializers.ModelSerializer):
+    """Serializer for exporting sequences"""
+    class Meta:
+        model = Sequence
+        exclude = ['id', 'sequence_id', 'created_by', 'created_at', 'updated_at']
+
+
 class EventSerializer(serializers.ModelSerializer):
     created_by_username = serializers.CharField(source='created_by.username', read_only=True, allow_null=True)
     webhook_endpoint = serializers.SerializerMethodField()
@@ -185,6 +227,7 @@ class SequenceSerializer(serializers.ModelSerializer):
 
 class ActivityLogSerializer(serializers.ModelSerializer):
     user_email = serializers.SerializerMethodField()
+    user_info = serializers.SerializerMethodField()
 
     class Meta:
         model = ActivityLog
@@ -195,7 +238,20 @@ class ActivityLogSerializer(serializers.ModelSerializer):
         """Return cached email or user email"""
         if obj.user_email:
             return obj.user_email
-        return obj.user.email if obj.user else 'System'
+        return obj.user.email if obj.user else 'abc@company.com'
+
+    def get_user_info(self, obj):
+        """Return formatted user info with IP, OS, Device, Browser"""
+        parts = []
+        if obj.ip_address:
+            parts.append(obj.ip_address)
+        if obj.user_os:
+            parts.append(obj.user_os)
+        if obj.user_device:
+            parts.append(obj.user_device)
+        if obj.user_browser:
+            parts.append(obj.user_browser)
+        return ' | '.join(parts) if parts else 'N/A'
 
 
 class ExecutionLogSerializer(serializers.ModelSerializer):
@@ -210,11 +266,25 @@ class SequenceExecutionSerializer(serializers.ModelSerializer):
     sequence_id = serializers.IntegerField(source='sequence.sequence_id', read_only=True)
     event_name = serializers.CharField(source='triggered_by_event.name', read_only=True, allow_null=True)
     logs = ExecutionLogSerializer(many=True, read_only=True)
+    trigger_source = serializers.SerializerMethodField()
 
     class Meta:
         model = SequenceExecution
         fields = '__all__'
         read_only_fields = ('started_at', 'completed_at', 'duration_ms')
+
+    def get_trigger_source(self, obj):
+        """Return formatted trigger source information"""
+        parts = []
+        if obj.trigger_ip:
+            parts.append(obj.trigger_ip)
+        if obj.trigger_os:
+            parts.append(obj.trigger_os)
+        if obj.trigger_device:
+            parts.append(obj.trigger_device)
+        if obj.trigger_browser:
+            parts.append(obj.trigger_browser)
+        return ' | '.join(parts) if parts else 'N/A'
 
 
 class SequenceExecutionListSerializer(serializers.ModelSerializer):
@@ -223,6 +293,7 @@ class SequenceExecutionListSerializer(serializers.ModelSerializer):
     sequence_id = serializers.IntegerField(source='sequence.sequence_id', read_only=True)
     event_name = serializers.CharField(source='triggered_by_event.name', read_only=True, allow_null=True)
     log_count = serializers.SerializerMethodField()
+    trigger_source = serializers.SerializerMethodField()
 
     class Meta:
         model = SequenceExecution
@@ -231,3 +302,16 @@ class SequenceExecutionListSerializer(serializers.ModelSerializer):
 
     def get_log_count(self, obj):
         return obj.logs.count()
+
+    def get_trigger_source(self, obj):
+        """Return formatted trigger source information"""
+        parts = []
+        if obj.trigger_ip:
+            parts.append(obj.trigger_ip)
+        if obj.trigger_os:
+            parts.append(obj.trigger_os)
+        if obj.trigger_device:
+            parts.append(obj.trigger_device)
+        if obj.trigger_browser:
+            parts.append(obj.trigger_browser)
+        return ' | '.join(parts) if parts else 'N/A'

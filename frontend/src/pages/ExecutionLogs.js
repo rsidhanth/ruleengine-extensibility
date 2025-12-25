@@ -11,7 +11,6 @@ import {
   TableRow,
   TablePagination,
   Chip,
-  IconButton,
   Button,
   TextField,
   InputAdornment,
@@ -26,7 +25,7 @@ import {
   Search as SearchIcon,
   Visibility as VisibilityIcon,
 } from '@mui/icons-material';
-import { sequenceExecutionsApi, executionLogsApi } from '../services/api';
+import { sequenceExecutionsApi } from '../services/api';
 
 const ExecutionRow = ({ execution, onViewDetails }) => {
   const getStatusColor = (status) => {
@@ -91,6 +90,11 @@ const ExecutionRow = ({ execution, onViewDetails }) => {
       </TableCell>
       <TableCell>
         <Typography variant="body2">{execution.event_name || '-'}</Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+          {execution.trigger_source || 'N/A'}
+        </Typography>
       </TableCell>
       <TableCell>
         <Typography variant="body2">{formatDuration(execution.duration_ms)}</Typography>
@@ -222,6 +226,7 @@ const ExecutionLogs = ({ onNavigateToDetails }) => {
                   <TableCell sx={{ fontWeight: 600 }}>Execution ID</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Triggered By</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Trigger Source</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
                 </TableRow>
@@ -229,7 +234,7 @@ const ExecutionLogs = ({ onNavigateToDetails }) => {
               <TableBody>
                 {paginatedExecutions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                       <Typography color="text.secondary">No execution logs found</Typography>
                     </TableCell>
                   </TableRow>

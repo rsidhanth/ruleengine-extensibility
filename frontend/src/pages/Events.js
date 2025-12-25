@@ -28,10 +28,14 @@ import {
   Download as DownloadIcon,
   ContentCopy as DuplicateIcon,
   PlayArrow as TestIcon,
+  FileDownload as ExportIcon,
+  FileUpload as ImportIcon,
 } from '@mui/icons-material';
 import { eventsApi } from '../services/api';
 import EventForm from '../components/EventForm';
 import EventTestModal from '../components/EventTestModal';
+import ImportModal from '../components/ImportModal';
+import NameConflictDialog from '../components/NameConflictDialog';
 
 const Events = () => {
   const [events, setEvents] = useState([]);
@@ -42,6 +46,9 @@ const Events = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '' });
   const [testModalOpen, setTestModalOpen] = useState(false);
   const [testingEvent, setTestingEvent] = useState(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [nameConflictData, setNameConflictData] = useState(null);
+  const [importDataCache, setImportDataCache] = useState(null);
 
   useEffect(() => {
     loadEvents();
@@ -194,6 +201,88 @@ const Events = () => {
     return status === 'active' ? 'Active' : 'Inactive';
   };
 
+  const handleExport = async (event) => {
+    try {
+      const response = await eventsApi.export(event.id);
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `event-${event.name}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setSnackbar({ open: true, message: 'Event exported successfully' });
+    } catch (err) {
+      setError('Failed to export event');
+    }
+  };
+
+  const handleImport = async (file, overrides = {}) => {
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      setImportDataCache(importData);
+
+      const requestData = {
+        ...importData,
+        ...overrides
+      };
+
+      const response = await eventsApi.import(requestData);
+
+      if (response.data.success) {
+        setSnackbar({ open: true, message: 'Event imported successfully' });
+        loadEvents();
+        setImportDataCache(null);
+        setImportModalOpen(false);
+      }
+    } catch (err) {
+      const errorType = err.response?.data?.error;
+
+      if (errorType === 'name_conflict') {
+        setNameConflictData({
+          data: err.response.data,
+          originalData: importDataCache || JSON.parse(await file.text())
+        });
+        setImportModalOpen(false);
+      } else {
+        setError(err.response?.data?.message || 'Import failed');
+        setImportDataCache(null);
+      }
+    }
+  };
+
+  const handleConflictResolve = async (newName) => {
+    try {
+      const requestData = {
+        ...importDataCache,
+        name_override: newName
+      };
+
+      const response = await eventsApi.import(requestData);
+
+      if (response.data.success) {
+        setSnackbar({ open: true, message: 'Event imported successfully' });
+        loadEvents();
+        setImportDataCache(null);
+      }
+    } catch (err) {
+      const errorType = err.response?.data?.error;
+      if (errorType === 'name_conflict') {
+        setNameConflictData({
+          data: err.response.data,
+          originalData: importDataCache
+        });
+      } else {
+        setError(err.response?.data?.message || 'Import failed');
+        setImportDataCache(null);
+      }
+    } finally {
+      setNameConflictData(null);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -208,13 +297,22 @@ const Events = () => {
         <Typography variant="h4" component="h1">
           Events
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleCreate}
-        >
-          Create Event
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ImportIcon />}
+            onClick={() => setImportModalOpen(true)}
+          >
+            Import
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleCreate}
+          >
+            Create Event
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -336,6 +434,15 @@ const Events = () => {
                     </Box>
                   </TableCell>
                   <TableCell align="right">
+                    <Tooltip title="Export event">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleExport(event)}
+                        color="info"
+                      >
+                        <ExportIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="View event">
                       <IconButton
                         size="small"
@@ -413,6 +520,26 @@ const Events = () => {
         open={testModalOpen}
         onClose={() => setTestModalOpen(false)}
         event={testingEvent}
+      />
+
+      <ImportModal
+        open={importModalOpen}
+        onClose={() => {
+          setImportModalOpen(false);
+          setImportDataCache(null);
+        }}
+        onImport={handleImport}
+        title="Import Event"
+      />
+
+      <NameConflictDialog
+        open={!!nameConflictData}
+        onClose={() => {
+          setNameConflictData(null);
+          setImportDataCache(null);
+        }}
+        onConfirm={handleConflictResolve}
+        conflictData={nameConflictData?.data}
       />
 
       <Snackbar

@@ -72,6 +72,118 @@ class ConnectorViewSet(viewsets.ModelViewSet):
                 status=400
             )
 
+    @action(detail=True, methods=['get'])
+    def export(self, request, pk=None):
+        """Export connector with credential profile and actions"""
+        from django.utils import timezone
+        from .serializers import ConnectorExportSerializer
+
+        connector = self.get_object()
+        serializer = ConnectorExportSerializer(connector)
+        return Response({
+            'export_version': '1.0',
+            'export_type': 'connector',
+            'exported_at': timezone.now().isoformat(),
+            'data': serializer.data
+        })
+
+    @action(detail=False, methods=['post'])
+    def import_connector(self, request):
+        """Import connector from JSON with dual name conflict handling"""
+        from django.db import transaction
+
+        data = request.data.get('data', {})
+        connector_name_override = request.data.get('connector_name_override')
+        credential_name_override = request.data.get('credential_name_override')
+        use_existing_credential = request.data.get('use_existing_credential', False)
+
+        # Check connector name conflict
+        connector_name = connector_name_override or data.get('name')
+        if Connector.objects.filter(name=connector_name).exists():
+            return Response({
+                'success': False,
+                'error': 'connector_name_conflict',
+                'conflict_type': 'connector',
+                'message': f'Connector "{connector_name}" already exists',
+                'original_name': data.get('name')
+            }, status=400)
+
+        # Handle credential profile
+        credential_data = data.get('credential_profile', {})
+        credential_name = credential_name_override or credential_data.get('name')
+
+        # Check if credential profile exists
+        existing_credential = Credential.objects.filter(name=credential_name).first()
+
+        if existing_credential:
+            if use_existing_credential:
+                # User chose to use existing credential profile
+                credential = existing_credential
+                credential_created = False
+            else:
+                # Credential name conflict - ask user
+                return Response({
+                    'success': False,
+                    'error': 'credential_name_conflict',
+                    'conflict_type': 'credential',
+                    'message': f'Credential profile "{credential_name}" already exists',
+                    'original_credential_name': credential_data.get('name'),
+                    'existing_credential': {
+                        'id': existing_credential.id,
+                        'name': existing_credential.name,
+                        'auth_type': existing_credential.auth_type,
+                        'description': existing_credential.description
+                    }
+                }, status=400)
+        else:
+            # Create new credential profile with overridden name
+            credential_data['name'] = credential_name
+            try:
+                with transaction.atomic():
+                    credential = Credential.objects.create(**credential_data)
+                    credential_created = True
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'error': 'credential_creation_failed',
+                    'message': f'Failed to create credential profile: {str(e)}'
+                }, status=400)
+
+        # Create connector
+        try:
+            with transaction.atomic():
+                connector = Connector.objects.create(
+                    name=connector_name,
+                    description=data.get('description', ''),
+                    base_url=data.get('base_url'),
+                    credential=credential,
+                    connector_type=data.get('connector_type', 'custom'),
+                    status='inactive'  # Safe default
+                )
+
+                # Create actions
+                for action_data in data.get('actions', []):
+                    ConnectorAction.objects.create(
+                        connector=connector,
+                        **action_data
+                    )
+
+                return Response({
+                    'success': True,
+                    'connector_id': connector.id,
+                    'connector_name': connector.name,
+                    'credential_profile_id': credential.id,
+                    'credential_profile_name': credential.name,
+                    'credential_profile_created': credential_created,
+                    'credential_profile_reused': not credential_created
+                })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': 'connector_creation_failed',
+                'message': f'Failed to create connector: {str(e)}'
+            }, status=400)
+
 
 class ConnectorActionViewSet(viewsets.ModelViewSet):
     queryset = ConnectorAction.objects.all()
@@ -191,6 +303,32 @@ class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
 
+    def _extract_trigger_source(self, request):
+        """
+        Extract trigger source information from the request
+        Returns dict with ip, os, device, and browser
+
+        TODO: Implement actual extraction logic using request.META['HTTP_USER_AGENT']
+        and request.META['REMOTE_ADDR'] or request.META['HTTP_X_FORWARDED_FOR']
+
+        Expected format examples:
+        - IP: "192.168.1.100" or "10.0.0.5"
+        - OS: "Windows 10/11", "macOS 14.1", "Android 13", "iOS 16.2", "Linux"
+        - Device: "Desktop", "iPhone", "iPad", "Android Phone", "Android Tablet"
+        - Browser: "Chrome 131", "Edge 120", "Firefox 115", "Safari 17"
+        """
+
+        # Static placeholder values for demonstration
+        # Developer should replace with actual User-Agent parsing logic
+        result = {
+            'ip': '192.168.1.100',  # TODO: Extract from request.META['REMOTE_ADDR'] or HTTP_X_FORWARDED_FOR
+            'os': 'Windows 10/11',  # TODO: Parse from User-Agent (e.g., "Windows NT 10.0" -> "Windows 10/11")
+            'device': 'Desktop',    # TODO: Parse from User-Agent (Desktop/Mobile/Tablet/iPhone/iPad/etc)
+            'browser': 'Chrome 131' # TODO: Parse from User-Agent (Browser name + major version)
+        }
+
+        return result
+
     def update(self, request, *args, **kwargs):
         """
         Override update to create a new version instead of modifying existing event
@@ -298,6 +436,9 @@ class EventViewSet(viewsets.ModelViewSet):
             'method': request.method
         }
 
+        # Extract trigger source information
+        trigger_source = self._extract_trigger_source(request)
+
         # Trigger sequences that are listening to this event
         try:
             from .sequence_executor import SequenceExecutor
@@ -317,7 +458,8 @@ class EventViewSet(viewsets.ModelViewSet):
                     executor = SequenceExecutor(
                         sequence=sequence,
                         event=event,
-                        trigger_data=payload
+                        trigger_data=payload,
+                        trigger_source=trigger_source
                     )
                     # Execute asynchronously in the background
                     # For testing, we'll execute synchronously
@@ -365,6 +507,68 @@ class EventViewSet(viewsets.ModelViewSet):
                 {'message': 'No test payload received yet. Send a POST request to the test endpoint.'},
                 status=404
             )
+
+    @action(detail=True, methods=['get'])
+    def export(self, request, pk=None):
+        """Export event definition"""
+        from django.utils import timezone
+        from .serializers import EventExportSerializer
+
+        event = self.get_object()
+        serializer = EventExportSerializer(event)
+        return Response({
+            'export_version': '1.0',
+            'export_type': 'event',
+            'exported_at': timezone.now().isoformat(),
+            'data': serializer.data
+        })
+
+    @action(detail=False, methods=['post'])
+    def import_event(self, request):
+        """Import event from JSON"""
+        from django.db import transaction
+
+        data = request.data.get('data', {})
+        name_override = request.data.get('name_override')
+
+        # Check name conflict
+        event_name = name_override or data.get('name')
+        if Event.objects.filter(name=event_name).exists():
+            return Response({
+                'success': False,
+                'error': 'name_conflict',
+                'message': f'Event "{event_name}" already exists'
+            }, status=400)
+
+        # Create event with new IDs
+        try:
+            with transaction.atomic():
+                event = Event.objects.create(
+                    name=event_name,
+                    description=data.get('description', ''),
+                    event_type=data.get('event_type', 'custom'),
+                    event_format=data.get('event_format', {}),
+                    parameters=data.get('parameters', {}),
+                    schema=data.get('schema', {}),
+                    acknowledgement_enabled=data.get('acknowledgement_enabled', False),
+                    acknowledgement_type=data.get('acknowledgement_type', 'basic'),
+                    acknowledgement_status_code=data.get('acknowledgement_status_code', 200),
+                    acknowledgement_payload=data.get('acknowledgement_payload', {}),
+                    status='inactive',  # Safe default
+                    created_by=request.user if request.user.is_authenticated else None
+                )
+
+                return Response({
+                    'success': True,
+                    'event_id': event.event_id,
+                    'event_name': event.name
+                })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': 'event_creation_failed',
+                'message': f'Failed to create event: {str(e)}'
+            }, status=400)
 
 
 class SequenceViewSet(viewsets.ModelViewSet):
@@ -492,6 +696,188 @@ class SequenceViewSet(viewsets.ModelViewSet):
             'final_output': latest_execution.final_output,
             'execution_logs': logs_data
         })
+
+    def _extract_sequence_dependencies(self, sequence_data):
+        """Extract all dependencies from sequence"""
+        dependencies = {
+            'events': [],
+            'connectors': set(),
+            'actions': []
+        }
+
+        # Extract trigger events
+        for event_id in sequence_data.get('trigger_events', []):
+            event = Event.objects.filter(id=event_id).first()
+            if event:
+                dependencies['events'].append({
+                    'id': event.id,
+                    'event_id': event.event_id,
+                    'name': event.name
+                })
+
+        # Extract from nodes
+        for node in sequence_data.get('flow_nodes', []):
+            node_type = node.get('data', {}).get('nodeType')
+
+            if node_type == 'event':
+                event_id = node['data'].get('eventConfig', {}).get('eventId')
+                if event_id:
+                    event = Event.objects.filter(id=event_id).first()
+                    if event:
+                        dependencies['events'].append({
+                            'id': event.id,
+                            'event_id': event.event_id,
+                            'name': event.name
+                        })
+
+            elif node_type == 'action':
+                action_id = node['data'].get('actionConfig', {}).get('actionId')
+                if action_id:
+                    action = ConnectorAction.objects.filter(id=action_id).first()
+                    if action:
+                        dependencies['connectors'].add(action.connector.name)
+                        dependencies['actions'].append({
+                            'id': action.id,
+                            'name': action.name,
+                            'connector_name': action.connector.name
+                        })
+
+        dependencies['connectors'] = list(dependencies['connectors'])
+        return dependencies
+
+    @action(detail=True, methods=['get'])
+    def export(self, request, pk=None):
+        """Export sequence with dependencies"""
+        from django.utils import timezone
+        from .serializers import SequenceExportSerializer
+
+        sequence = self.get_object()
+        serializer = SequenceExportSerializer(sequence)
+        data = serializer.data
+
+        dependencies = self._extract_sequence_dependencies(data)
+
+        return Response({
+            'export_version': '1.0',
+            'export_type': 'sequence',
+            'exported_at': timezone.now().isoformat(),
+            'data': data,
+            'dependencies': dependencies
+        })
+
+    @action(detail=False, methods=['post'])
+    def validate_import(self, request):
+        """Validate sequence import dependencies"""
+        data = request.data.get('data', {})
+
+        missing = {
+            'events': [],
+            'connectors': [],
+            'actions': []
+        }
+
+        # Validate trigger events
+        for event_id in data.get('trigger_events', []):
+            if not Event.objects.filter(id=event_id).exists():
+                missing['events'].append({
+                    'id': event_id,
+                    'context': 'trigger_events'
+                })
+
+        # Validate nodes
+        for node in data.get('flow_nodes', []):
+            node_type = node.get('data', {}).get('nodeType')
+
+            if node_type == 'event':
+                event_id = node['data'].get('eventConfig', {}).get('eventId')
+                event_name = node['data'].get('eventConfig', {}).get('eventName')
+                if event_id and not Event.objects.filter(id=event_id).exists():
+                    missing['events'].append({
+                        'id': event_id,
+                        'name': event_name,
+                        'node': node['id']
+                    })
+
+            elif node_type == 'action':
+                action_id = node['data'].get('actionConfig', {}).get('actionId')
+                action_name = node['data'].get('actionConfig', {}).get('actionName')
+                connector_name = node['data'].get('actionConfig', {}).get('connectorName')
+
+                if action_id and not ConnectorAction.objects.filter(id=action_id).exists():
+                    missing['actions'].append({
+                        'id': action_id,
+                        'name': action_name,
+                        'connector': connector_name,
+                        'node': node['id']
+                    })
+
+                    if connector_name and not Connector.objects.filter(name=connector_name).exists():
+                        if connector_name not in missing['connectors']:
+                            missing['connectors'].append(connector_name)
+
+        is_valid = (len(missing['events']) == 0 and
+                    len(missing['connectors']) == 0 and
+                    len(missing['actions']) == 0)
+
+        return Response({
+            'valid': is_valid,
+            'missing_dependencies': missing
+        })
+
+    @action(detail=False, methods=['post'])
+    def import_sequence(self, request):
+        """Import sequence after validation"""
+        from django.db import transaction
+
+        data = request.data.get('data', {})
+        name_override = request.data.get('name_override')
+
+        # Check name conflict
+        sequence_name = name_override or data.get('name')
+        if Sequence.objects.filter(name=sequence_name).exists():
+            return Response({
+                'success': False,
+                'error': 'name_conflict',
+                'message': f'Sequence "{sequence_name}" already exists'
+            }, status=400)
+
+        # Validate dependencies (BLOCKING)
+        validation_result = self.validate_import(request)
+        if not validation_result.data['valid']:
+            return Response({
+                'success': False,
+                'error': 'missing_dependencies',
+                'message': 'Cannot import: missing required dependencies',
+                'details': validation_result.data['missing_dependencies']
+            }, status=400)
+
+        # Create sequence
+        try:
+            with transaction.atomic():
+                sequence = Sequence.objects.create(
+                    name=sequence_name,
+                    description=data.get('description', ''),
+                    sequence_type=data.get('sequence_type', 'custom'),
+                    status='inactive',  # Safe default
+                    flow_nodes=data.get('flow_nodes', []),
+                    flow_edges=data.get('flow_edges', []),
+                    trigger_events=data.get('trigger_events', []),
+                    variables=data.get('variables', []),
+                    version=data.get('version', '1.0'),
+                    created_by=request.user if request.user.is_authenticated else None
+                )
+
+                return Response({
+                    'success': True,
+                    'sequence_id': sequence.sequence_id,
+                    'sequence_name': sequence.name
+                })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': 'sequence_creation_failed',
+                'message': f'Failed to create sequence: {str(e)}'
+            }, status=400)
 
 
 @csrf_exempt

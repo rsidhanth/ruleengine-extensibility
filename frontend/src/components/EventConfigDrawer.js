@@ -8,6 +8,11 @@ import {
   Alert,
   Divider,
   Chip,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -15,10 +20,40 @@ import {
 } from '@mui/icons-material';
 import { eventsApi } from '../services/api';
 
-const EventConfigDrawer = ({ open, onClose, nodeData, onSave }) => {
+const EventConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = [], sequenceVariables = [] }) => {
   const [events, setEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [parameterMappings, setParameterMappings] = useState({});
+
+  // Build available variables from trigger events and sequence variables
+  const getAvailableVariables = () => {
+    const variables = [];
+
+    // Add trigger event parameters
+    triggerEvents.forEach(triggerEvent => {
+      if (triggerEvent.parameters) {
+        Object.keys(triggerEvent.parameters).forEach(paramName => {
+          variables.push({
+            value: `@trigger.${paramName}`,
+            label: `Trigger: ${triggerEvent.name || triggerEvent.event_name} - ${paramName}`,
+            group: 'Trigger Event'
+          });
+        });
+      }
+    });
+
+    // Add sequence variables
+    sequenceVariables.forEach(variable => {
+      variables.push({
+        value: `@sequence.${variable.name}`,
+        label: `Sequence Variable: ${variable.name}`,
+        group: 'Sequence Variables'
+      });
+    });
+
+    return variables;
+  };
 
   // Load events on mount
   useEffect(() => {
@@ -34,8 +69,31 @@ const EventConfigDrawer = ({ open, onClose, nodeData, onSave }) => {
       if (config.eventId) {
         setSelectedEvent(config.eventId);
       }
+      if (config.parameterMappings) {
+        setParameterMappings(config.parameterMappings);
+      }
     }
   }, [nodeData]);
+
+  // Reset parameter mappings when event changes
+  useEffect(() => {
+    if (selectedEvent) {
+      const event = events.find(e => e.id === selectedEvent);
+      if (event && event.parameters) {
+        // Initialize parameter mappings with empty values if not already set
+        setParameterMappings(prev => {
+          const newMappings = {};
+          Object.keys(event.parameters).forEach(paramName => {
+            newMappings[paramName] = prev[paramName] || {
+              type: 'static',
+              value: ''
+            };
+          });
+          return newMappings;
+        });
+      }
+    }
+  }, [selectedEvent, events]);
 
   const loadEvents = async () => {
     setLoading(true);
@@ -55,6 +113,16 @@ const EventConfigDrawer = ({ open, onClose, nodeData, onSave }) => {
     setSelectedEvent(eventId);
   };
 
+  const handleParameterMappingChange = (paramName, field, value) => {
+    setParameterMappings(prev => ({
+      ...prev,
+      [paramName]: {
+        ...prev[paramName],
+        [field]: value
+      }
+    }));
+  };
+
   const handleSave = () => {
     const event = events.find(e => e.id === selectedEvent);
 
@@ -67,6 +135,7 @@ const EventConfigDrawer = ({ open, onClose, nodeData, onSave }) => {
         eventName: event?.name,
         eventIdNumber: event?.event_id,
         eventType: event?.event_type,
+        parameterMappings: parameterMappings,
       },
     };
 
@@ -198,6 +267,113 @@ const EventConfigDrawer = ({ open, onClose, nodeData, onSave }) => {
                   </Box>
                 )}
               </Box>
+
+              {/* Parameter Mapping Section */}
+              {selectedEventDetails.parameters && Object.keys(selectedEventDetails.parameters).length > 0 && (
+                <>
+                  <Divider sx={{ my: 3 }} />
+
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: '#111827' }}>
+                    Parameter Mapping
+                  </Typography>
+
+                  <Alert severity="info" sx={{ mb: 2, fontSize: '0.75rem' }}>
+                    Configure values for event parameters. Choose between static values or variables from trigger event or sequence.
+                  </Alert>
+
+                  {Object.entries(selectedEventDetails.parameters).map(([paramName, paramDef]) => (
+                    <Box key={paramName} sx={{ mb: 3, p: 2, backgroundColor: '#f9fafb', borderRadius: 1, border: '1px solid #e5e7eb' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#111827' }}>
+                          {paramName}
+                          {paramDef.required && <Chip label="Required" size="small" color="error" sx={{ ml: 1, height: '18px', fontSize: '0.65rem' }} />}
+                        </Typography>
+                        <Chip label={paramDef.type} size="small" sx={{ fontSize: '0.7rem', height: '20px' }} />
+                      </Box>
+
+                      {paramDef.description && (
+                        <Typography variant="caption" sx={{ display: 'block', mb: 2, color: '#6b7280' }}>
+                          {paramDef.description}
+                        </Typography>
+                      )}
+
+                      <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column' }}>
+                        <Box>
+                          <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontWeight: 600, color: '#374151' }}>
+                            Type
+                          </Typography>
+                          <select
+                            value={parameterMappings[paramName]?.type || 'static'}
+                            onChange={(e) => handleParameterMappingChange(paramName, 'type', e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              fontSize: '14px',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '6px',
+                              backgroundColor: 'white',
+                              cursor: 'pointer',
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            <option value="static">Static Value</option>
+                            <option value="variable">Variable</option>
+                          </select>
+                        </Box>
+
+                        <Box>
+                          <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontWeight: 600, color: '#374151' }}>
+                            {parameterMappings[paramName]?.type === 'variable' ? 'Variable' : 'Static Value'}
+                          </Typography>
+                          {parameterMappings[paramName]?.type === 'variable' ? (
+                            <select
+                              value={parameterMappings[paramName]?.value || ''}
+                              onChange={(e) => handleParameterMappingChange(paramName, 'value', e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                fontSize: '14px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                backgroundColor: 'white',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              <option value="">Select a variable...</option>
+                              {getAvailableVariables().length === 0 ? (
+                                <option value="" disabled>No variables available</option>
+                              ) : (
+                                getAvailableVariables().map((variable, idx) => (
+                                  <option key={idx} value={variable.value}>
+                                    {variable.label}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={parameterMappings[paramName]?.value || ''}
+                              onChange={(e) => handleParameterMappingChange(paramName, 'value', e.target.value)}
+                              placeholder="Enter static value"
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                fontSize: '14px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '6px',
+                                fontFamily: 'inherit',
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
+                  ))}
+                </>
+              )}
 
               <Alert severity="warning" sx={{ mt: 2, fontSize: '0.75rem' }}>
                 <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.5 }}>

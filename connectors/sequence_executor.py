@@ -20,7 +20,7 @@ class SequenceExecutor:
     Creates execution logs for tracking and debugging
     """
 
-    def __init__(self, sequence, event=None, trigger_data=None):
+    def __init__(self, sequence, event=None, trigger_data=None, trigger_source=None):
         """
         Initialize the sequence executor
 
@@ -28,10 +28,12 @@ class SequenceExecutor:
             sequence: Sequence model instance to execute
             event: Optional Event that triggered this sequence
             trigger_data: Optional data from the trigger event
+            trigger_source: Optional dict with IP, OS, Device, Browser info
         """
         self.sequence = sequence
         self.event = event
         self.trigger_data = trigger_data or {}
+        self.trigger_source = trigger_source or {}
         self.execution = None
         self.context = {}  # Shared context for passing data between nodes
         self.action_executor = ActionExecutor()
@@ -56,10 +58,36 @@ class SequenceExecutor:
                     status='running',
                     started_at=start_time,
                     trigger_payload=self.trigger_data,
-                    variables_state={}
+                    variables_state={},
+                    trigger_ip=self.trigger_source.get('ip'),
+                    trigger_os=self.trigger_source.get('os', ''),
+                    trigger_device=self.trigger_source.get('device', ''),
+                    trigger_browser=self.trigger_source.get('browser', '')
                 )
 
             logger.info(f"Starting sequence execution {execution_id} for sequence '{self.sequence.name}'")
+
+            # Log the event trigger as the first execution log entry
+            if self.event:
+                ExecutionLog.objects.create(
+                    sequence_execution=self.execution,
+                    node_id='trigger',
+                    node_type='trigger',
+                    node_name=f"Event: {self.event.name}",
+                    log_level='info',
+                    status='completed',
+                    message=f'Event "{self.event.name}" triggered sequence execution',
+                    input_data={
+                        'event_id': self.event.event_id,
+                        'event_name': self.event.name,
+                        'trigger_payload': self.trigger_data,
+                        'trigger_source': self.trigger_source
+                    },
+                    output_data={'payload': self.trigger_data},
+                    started_at=start_time,
+                    completed_at=start_time,
+                    duration_ms=0
+                )
 
             # Initialize context with trigger data
             self.context = {
@@ -176,6 +204,14 @@ class SequenceExecutor:
                 return results[0] if len(results) == 1 else results
             return None
 
+        # Handle parallel nodes - execute all branches in parallel
+        if node_type == 'parallel':
+            return self._handle_parallel_flow(node_id, nodes, edges)
+
+        # Handle merge nodes - wait for all incoming branches
+        if node_type == 'merge':
+            return self._handle_merge_flow(node_id, nodes, edges)
+
         # Execute the node based on its type
         result = self._execute_node(node_id, node)
 
@@ -226,6 +262,8 @@ class SequenceExecutor:
                 result = self._execute_custom_rule_node(node_data)
             elif node_type == 'api_call':
                 result = self._execute_api_call_node(node_data)
+            elif node_type == 'event':
+                result = self._execute_event_node(node_data)
             else:
                 result = {'success': False, 'error': f'Unknown node type: {node_type}'}
 
@@ -452,6 +490,130 @@ class SequenceExecutor:
             'message': 'API call executed (not yet fully implemented)'
         }
 
+    def _execute_event_node(self, node_data):
+        """
+        Execute an event node - triggers the configured event and starts associated sequences
+
+        Args:
+            node_data: Node data containing eventConfig with eventId and parameterMappings
+
+        Returns:
+            dict: Result of event triggering
+        """
+        event_config = node_data.get('eventConfig', {})
+        event_id = event_config.get('eventId')
+
+        if not event_id:
+            return {
+                'success': False,
+                'error': 'No event ID specified in event node configuration'
+            }
+
+        try:
+            # Get the event
+            event = Event.objects.get(id=event_id)
+            logger.info(f"Triggering event: {event.name} (ID: {event.event_id})")
+
+            # Build event payload from parameter mappings
+            parameter_mappings = event_config.get('parameterMappings', {})
+            event_payload = {}
+
+            for param_name, mapping in parameter_mappings.items():
+                mapping_type = mapping.get('type', 'static')
+                mapping_value = mapping.get('value', '')
+
+                if mapping_type == 'static':
+                    # Use static value directly
+                    event_payload[param_name] = mapping_value
+                elif mapping_type == 'variable':
+                    # Resolve variable from context
+                    # Variables are in format @trigger.field or @sequence.var
+                    if mapping_value.startswith('@trigger.'):
+                        field_name = mapping_value.replace('@trigger.', '')
+                        resolved_value = self._get_context_value(f'trigger.{field_name}')
+                        event_payload[param_name] = resolved_value
+                    elif mapping_value.startswith('@sequence.'):
+                        var_name = mapping_value.replace('@sequence.', '')
+                        resolved_value = self._get_context_value(var_name)
+                        event_payload[param_name] = resolved_value
+                    else:
+                        # Try direct context lookup
+                        resolved_value = self._get_context_value(mapping_value)
+                        event_payload[param_name] = resolved_value
+
+                    logger.info(f"Resolved parameter {param_name}: {mapping_value} -> {event_payload.get(param_name)}")
+
+            logger.info(f"Event payload: {event_payload}")
+
+            # Use the same logic as the test_webhook endpoint to trigger sequences
+            # Filter sequences in Python since SQLite doesn't support __contains on JSON fields
+            all_active_sequences = Sequence.objects.filter(status='active')
+            sequences = [s for s in all_active_sequences if event.id in (s.trigger_events or [])]
+
+            logger.info(f"Event {event.id} triggered. Found {len(sequences)} sequences to execute")
+            for seq in sequences:
+                logger.info(f"  - Sequence: {seq.name} (ID: {seq.id}, trigger_events: {seq.trigger_events})")
+
+            triggered_count = 0
+            triggered_sequence_ids = []
+
+            # Start each sequence that listens to this event
+            for sequence in sequences:
+                try:
+                    logger.info(f"Starting sequence: {sequence.name} (triggered by event {event.name})")
+
+                    # Create trigger source for server-triggered sequences
+                    # Using static values to indicate this is a server-side trigger
+                    server_trigger_source = {
+                        'ip': '10.0.0.1',
+                        'os': 'Ubuntu Linux 22.04',
+                        'device': 'Server',
+                        'browser': 'N/A (Server-side)'
+                    }
+
+                    # Create a new executor for this sequence
+                    sequence_executor = SequenceExecutor(
+                        sequence=sequence,
+                        event=event,
+                        trigger_data=event_payload,
+                        trigger_source=server_trigger_source
+                    )
+
+                    # Execute the sequence (same as webhook does)
+                    result = sequence_executor.execute()
+
+                    if result.get('success'):
+                        triggered_count += 1
+                        triggered_sequence_ids.append(sequence.sequence_id)
+                        logger.info(f"Successfully triggered sequence {sequence.name}")
+                    else:
+                        logger.warning(f"Sequence {sequence.name} execution failed: {result.get('error')}")
+
+                except Exception as e:
+                    logger.error(f"Error triggering sequence {sequence.name}: {str(e)}", exc_info=True)
+
+            return {
+                'success': True,
+                'event_id': event.event_id,
+                'event_name': event.name,
+                'payload': event_payload,
+                'sequences_triggered': triggered_count,
+                'sequence_ids': triggered_sequence_ids,
+                'message': f'Event "{event.name}" triggered successfully. Started {triggered_count} sequence(s).'
+            }
+
+        except Event.DoesNotExist:
+            return {
+                'success': False,
+                'error': f'Event with ID {event_id} not found'
+            }
+        except Exception as e:
+            logger.error(f"Error executing event node: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': f'Event execution error: {str(e)}'
+            }
+
     def _handle_condition_flow(self, node_id, condition_result, nodes, edges):
         """
         Handle flow branching based on condition result
@@ -629,6 +791,84 @@ class SequenceExecutor:
         else:
             logger.warning(f"Unknown operator: {operator}")
             return False
+
+    def _handle_parallel_flow(self, node_id, nodes, edges):
+        """
+        Handle parallel execution of branches
+
+        Args:
+            node_id: ID of the parallel node
+            nodes: All nodes in the flow
+            edges: All edges in the flow
+
+        Returns:
+            List of results from all parallel branches
+        """
+        logger.info(f"Parallel node {node_id}: Starting parallel execution")
+
+        # Find all outgoing edges from this parallel node
+        next_nodes = self._find_next_nodes(node_id, edges)
+
+        if not next_nodes:
+            logger.info(f"Parallel node {node_id} has no outgoing branches")
+            return None
+
+        logger.info(f"Parallel node {node_id}: Executing {len(next_nodes)} branches in parallel")
+
+        # Execute all branches
+        # Note: In production, this should use actual parallel execution (threads/async)
+        # For now, we execute them sequentially but treat them as if they were parallel
+        results = []
+        for next_node_id in next_nodes:
+            try:
+                logger.info(f"Parallel node {node_id}: Executing branch to {next_node_id}")
+                result = self._execute_flow(next_node_id, nodes, edges)
+                results.append({
+                    'node_id': next_node_id,
+                    'result': result,
+                    'success': True
+                })
+            except Exception as e:
+                logger.error(f"Parallel node {node_id}: Branch to {next_node_id} failed: {str(e)}")
+                results.append({
+                    'node_id': next_node_id,
+                    'error': str(e),
+                    'success': False
+                })
+
+        logger.info(f"Parallel node {node_id}: All branches completed")
+        return results
+
+    def _handle_merge_flow(self, node_id, nodes, edges):
+        """
+        Handle merge point for parallel branches
+        The merge node itself doesn't execute anything - it just passes through
+        In a true parallel implementation, this would wait for all incoming branches
+
+        Args:
+            node_id: ID of the merge node
+            nodes: All nodes in the flow
+            edges: All edges in the flow
+
+        Returns:
+            Result from continuing the flow after merge
+        """
+        logger.info(f"Merge node {node_id}: Merging parallel branches")
+
+        # In the current sequential execution model, all branches have already completed
+        # when we reach the merge node, so we just continue with the next node
+
+        next_nodes = self._find_next_nodes(node_id, edges)
+        if next_nodes:
+            logger.info(f"Merge node {node_id}: Continuing flow to {len(next_nodes)} node(s)")
+            results = []
+            for next_node_id in next_nodes:
+                result = self._execute_flow(next_node_id, nodes, edges)
+                results.append(result)
+            return results[0] if len(results) == 1 else results
+
+        logger.info(f"Merge node {node_id}: No outgoing nodes, flow ends here")
+        return None
 
 
 class ActionExecutor:

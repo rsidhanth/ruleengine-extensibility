@@ -7,10 +7,7 @@ import {
   Chip,
   CircularProgress,
   Alert,
-  Card,
-  CardContent,
   Grid,
-  Divider,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -18,14 +15,19 @@ import {
   TableBody,
   TableCell,
   TableRow,
+  TableContainer,
+  TableHead,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
-  Info as InfoIcon,
-  Warning as WarningIcon,
   ExpandMore as ExpandMoreIcon,
+  Visibility as VisibilityIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { sequenceExecutionsApi, executionLogsApi } from '../services/api';
 
@@ -34,6 +36,8 @@ const ExecutionDetails = ({ executionId, onBack }) => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedLog, setSelectedLog] = useState(null);
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
 
   useEffect(() => {
     loadExecutionDetails();
@@ -94,19 +98,6 @@ const ExecutionDetails = ({ executionId, onBack }) => {
     return colors[status] || '#6b7280';
   };
 
-  const getLogLevelIcon = (level) => {
-    switch (level) {
-      case 'success':
-        return <CheckCircleIcon sx={{ fontSize: '1.2rem', color: '#10b981' }} />;
-      case 'error':
-        return <ErrorIcon sx={{ fontSize: '1.2rem', color: '#ef4444' }} />;
-      case 'warning':
-        return <WarningIcon sx={{ fontSize: '1.2rem', color: '#f59e0b' }} />;
-      default:
-        return <InfoIcon sx={{ fontSize: '1.2rem', color: '#3b82f6' }} />;
-    }
-  };
-
   const formatDate = (dateString) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
@@ -131,6 +122,104 @@ const ExecutionDetails = ({ executionId, onBack }) => {
     if (!data) return 'N/A';
     if (typeof data === 'string') return data;
     return JSON.stringify(data, null, 2);
+  };
+
+  const handleViewDetails = (log) => {
+    setSelectedLog(log);
+    setDetailsModalOpen(true);
+  };
+
+  const handleCloseDetails = () => {
+    setDetailsModalOpen(false);
+    setSelectedLog(null);
+  };
+
+  const getNodeStatusColor = (status) => {
+    const colors = {
+      completed: '#10b981',
+      running: '#3b82f6',
+      failed: '#ef4444',
+      started: '#6b7280',
+      skipped: '#9ca3af',
+    };
+    return colors[status] || '#6b7280';
+  };
+
+  const renderTriggerDetails = (log) => {
+    const inputData = log.input_data || {};
+    const triggerSource = inputData.trigger_source || {};
+
+    return (
+      <Box sx={{ mt: 2 }}>
+        <Accordion defaultExpanded>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Event Information
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+              <Table size="small">
+                <TableBody>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600, width: '20%' }}>Event ID</TableCell>
+                    <TableCell>{inputData.event_id || 'N/A'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Event Name</TableCell>
+                    <TableCell>{inputData.event_name || 'N/A'}</TableCell>
+                  </TableRow>
+                  {triggerSource.ip && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>IP Address</TableCell>
+                      <TableCell>{triggerSource.ip}</TableCell>
+                    </TableRow>
+                  )}
+                  {triggerSource.os && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Operating System</TableCell>
+                      <TableCell>{triggerSource.os}</TableCell>
+                    </TableRow>
+                  )}
+                  {triggerSource.device && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Device Type</TableCell>
+                      <TableCell>{triggerSource.device}</TableCell>
+                    </TableRow>
+                  )}
+                  {triggerSource.browser && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Browser</TableCell>
+                      <TableCell>{triggerSource.browser}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Box>
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion defaultExpanded sx={{ mt: 1 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Trigger Payload
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                fontSize: '0.85rem',
+              }}
+            >
+              {formatJSON(inputData.trigger_payload)}
+            </pre>
+          </AccordionDetails>
+        </Accordion>
+      </Box>
+    );
   };
 
   const renderActionDetails = (log) => {
@@ -404,6 +493,8 @@ const ExecutionDetails = ({ executionId, onBack }) => {
 
   const renderNodeDetails = (log) => {
     switch (log.node_type) {
+      case 'trigger':
+        return renderTriggerDetails(log);
       case 'action':
         return renderActionDetails(log);
       case 'custom_rule':
@@ -539,48 +630,144 @@ const ExecutionDetails = ({ executionId, onBack }) => {
       {logs.length === 0 ? (
         <Alert severity="info">No execution logs available</Alert>
       ) : (
-        logs.map((log, index) => (
-          <Card key={log.id} sx={{ mb: 2 }}>
-            <CardContent>
-              {/* Node Header */}
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                <Box sx={{ mr: 2 }}>{getLogLevelIcon(log.log_level)}</Box>
-                <Box sx={{ flexGrow: 1 }}>
-                  <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>
-                    {log.node_name || log.node_id}
+        <Paper>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Node ID</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Node Type</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Node Name</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Started At</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Completed At</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {logs.map((log) => (
+                  <TableRow key={log.id} hover>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                        {log.node_id}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={log.node_type}
+                        size="small"
+                        sx={{ fontSize: '0.7rem', height: '24px', textTransform: 'capitalize' }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {log.node_name || log.node_id}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={log.status}
+                        size="small"
+                        sx={{
+                          backgroundColor: `${getNodeStatusColor(log.status)}20`,
+                          color: getNodeStatusColor(log.status),
+                          fontWeight: 600,
+                          textTransform: 'capitalize',
+                          fontSize: '0.7rem',
+                          height: '24px',
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        {formatDate(log.started_at)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        {log.completed_at ? formatDate(log.completed_at) : '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{formatDuration(log.duration_ms)}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<VisibilityIcon />}
+                        onClick={() => handleViewDetails(log)}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        View Details
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
+      )}
+
+      {/* Full Page Details Modal */}
+      <Dialog
+        open={detailsModalOpen}
+        onClose={handleCloseDetails}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: { height: '90vh' }
+        }}
+      >
+        {selectedLog && (
+          <>
+            <DialogTitle>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    {selectedLog.node_name || selectedLog.node_id}
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                  <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
                     <Chip
-                      label={log.node_type}
+                      label={selectedLog.node_type}
                       size="small"
                       sx={{ fontSize: '0.7rem', height: '22px' }}
                     />
                     <Chip
-                      label={log.status}
+                      label={selectedLog.status}
                       size="small"
-                      color={log.status === 'completed' ? 'success' : 'error'}
-                      sx={{ fontSize: '0.7rem', height: '22px' }}
+                      sx={{
+                        backgroundColor: `${getNodeStatusColor(selectedLog.status)}20`,
+                        color: getNodeStatusColor(selectedLog.status),
+                        fontWeight: 600,
+                        textTransform: 'capitalize',
+                        fontSize: '0.7rem',
+                        height: '22px',
+                      }}
                     />
-                    <Typography variant="caption" color="text.secondary">
-                      {formatDuration(log.duration_ms)}
-                    </Typography>
                   </Box>
                 </Box>
+                <IconButton onClick={handleCloseDetails}>
+                  <CloseIcon />
+                </IconButton>
               </Box>
-
-              <Divider sx={{ my: 2 }} />
-
-              {/* Message */}
-              <Typography variant="body2" sx={{ mb: 2 }}>
-                {log.message}
+            </DialogTitle>
+            <DialogContent dividers>
+              <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
+                {selectedLog.message}
               </Typography>
-
-              {/* Detailed logs based on node type */}
-              {renderNodeDetails(log)}
-            </CardContent>
-          </Card>
-        ))
-      )}
+              {renderNodeDetails(selectedLog)}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCloseDetails} variant="contained">
+                Close
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 };
