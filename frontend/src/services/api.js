@@ -18,6 +18,8 @@ export const credentialsApi = {
   testOAuth2: (data) => api.post('/credentials/test_oauth2/', data),
   testCustomAuth: (data) => api.post('/credentials/test_custom_auth/', data),
   getRequiredFields: (id) => api.get(`/credentials/${id}/required_fields/`),
+  // OAuth2 Authorization Code Flow
+  oauth2Initiate: (id, data) => api.post(`/credentials/${id}/oauth2_initiate/`, data),
 };
 
 export const credentialSetsApi = {

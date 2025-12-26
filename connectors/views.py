@@ -1,9 +1,9 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseRedirect
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.utils import timezone
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from .models import (
     AsyncActionExecution, AsyncActionProgress, Connector, Credential, CredentialSet, ConnectorAction, Event, Sequence,
@@ -13,6 +13,7 @@ from .serializers import (
     ConnectorSerializer, CredentialSerializer, CredentialSetSerializer, ConnectorActionSerializer, EventSerializer, SequenceSerializer,
     ActivityLogSerializer, SequenceExecutionSerializer, SequenceExecutionListSerializer, ExecutionLogSerializer
 )
+from .oauth2_service import OAuth2Service, OAuth2Error
 import json
 import logging
 
@@ -37,6 +38,58 @@ class CredentialViewSet(viewsets.ModelViewSet):
             'required_fields': credential.get_required_fields(),
             'configuration': credential.get_configuration_summary()
         })
+
+    @action(detail=True, methods=['post'])
+    def oauth2_initiate(self, request, pk=None):
+        """
+        Initiate OAuth2 authorization flow for this credential profile.
+
+        Request body:
+        {
+            "set_name": "Production",  // Name for the credential set to create
+            "is_default": false,       // Whether to set as default
+            "redirect_url": "http://localhost:3000/connectors"  // Where to redirect after completion
+        }
+
+        Returns:
+        {
+            "authorization_url": "https://provider.com/oauth/authorize?...",
+            "state": "abc123...",
+            "expires_in_seconds": 600
+        }
+        """
+        credential = self.get_object()
+
+        if credential.auth_type != 'oauth2':
+            return Response(
+                {'error': 'This credential profile is not configured for OAuth2'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        set_name = request.data.get('set_name')
+        is_default = request.data.get('is_default', False)
+        redirect_url = request.data.get('redirect_url', '')
+
+        if not set_name:
+            return Response(
+                {'error': 'set_name is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            result = OAuth2Service.initiate_authorization(
+                credential_id=credential.id,
+                set_name=set_name,
+                is_default=is_default,
+                redirect_url=redirect_url,
+                request=request
+            )
+            return Response(result)
+        except OAuth2Error as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class CredentialSetViewSet(viewsets.ModelViewSet):
@@ -1226,3 +1279,57 @@ class ExecutionLogViewSet(viewsets.ReadOnlyModelViewSet):
     search_fields = ['node_name', 'message']
     ordering_fields = ['started_at']
     ordering = ['started_at']
+
+
+# OAuth2 Callback Handler
+@csrf_exempt
+@require_http_methods(["GET"])
+def oauth2_callback(request):
+    """
+    OAuth2 callback endpoint - handles redirect from third-party authorization server.
+
+    The third-party will redirect to this URL with:
+    - code: The authorization code to exchange for tokens
+    - state: The state parameter we sent (for CSRF validation)
+
+    On success, redirects user to the frontend URL stored in the state.
+    On error, redirects to frontend with error parameter.
+    """
+    code = request.GET.get('code')
+    state = request.GET.get('state')
+    error = request.GET.get('error')
+    error_description = request.GET.get('error_description', '')
+
+    # Default frontend URL if something goes wrong
+    default_redirect = '/connectors'
+
+    # Handle errors from the OAuth provider
+    if error:
+        logger.error(f"OAuth2 error from provider: {error} - {error_description}")
+        return HttpResponseRedirect(f"{default_redirect}?oauth_error={error}&error_description={error_description}")
+
+    if not code or not state:
+        logger.error("OAuth2 callback missing code or state parameter")
+        return HttpResponseRedirect(f"{default_redirect}?oauth_error=missing_params")
+
+    try:
+        result = OAuth2Service.handle_callback(code, state, request)
+
+        # Redirect to the stored redirect URL with success message
+        redirect_url = result.get('redirect_url') or default_redirect
+
+        # Add success parameters
+        separator = '&' if '?' in redirect_url else '?'
+        success_url = (
+            f"{redirect_url}{separator}"
+            f"oauth_success=true"
+            f"&credential_set_name={result['credential_set_name']}"
+            f"&credential_name={result['credential_name']}"
+        )
+
+        logger.info(f"OAuth2 callback successful, redirecting to {redirect_url}")
+        return HttpResponseRedirect(success_url)
+
+    except OAuth2Error as e:
+        logger.error(f"OAuth2 callback error: {str(e)}")
+        return HttpResponseRedirect(f"{default_redirect}?oauth_error=callback_failed&error_description={str(e)}")

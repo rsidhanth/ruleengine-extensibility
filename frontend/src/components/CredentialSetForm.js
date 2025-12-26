@@ -15,7 +15,7 @@ import {
   InputAdornment,
   IconButton,
 } from '@mui/material';
-import { Visibility, VisibilityOff } from '@mui/icons-material';
+import { Visibility, VisibilityOff, OpenInNew as OpenInNewIcon } from '@mui/icons-material';
 import { credentialsApi, credentialSetsApi } from '../services/api';
 
 const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSave }) => {
@@ -128,6 +128,36 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
     }
   };
 
+  const handleOAuth2Authorize = async () => {
+    if (!formData.name.trim()) {
+      setError('Please enter a name for this credential set');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Get current page URL to redirect back after authorization
+      const redirectUrl = window.location.origin + window.location.pathname;
+
+      const response = await credentialsApi.oauth2Initiate(credential.id, {
+        set_name: formData.name,
+        is_default: formData.is_default,
+        redirect_url: redirectUrl,
+      });
+
+      // Redirect to the authorization URL
+      window.location.href = response.data.authorization_url;
+    } catch (err) {
+      console.error('Error initiating OAuth2:', err);
+      setError(err.response?.data?.error || 'Failed to initiate authorization');
+      setLoading(false);
+    }
+  };
+
+  const isOAuth2 = configuration.auth_type === 'oauth2';
+
   const renderFieldInput = (fieldName, fieldConfig) => {
     const isPasswordType = fieldConfig.type === 'password';
     const showPassword = showPasswords[fieldName];
@@ -184,10 +214,42 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
 
           {configuration.auth_type === 'oauth2' && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              OAuth2 Configuration:
-              <br />• Auth URL: {configuration.auth_url}
-              <br />• Token URL: {configuration.token_url}
-              {configuration.scope && <><br />• Scope: {configuration.scope}</>}
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                OAuth2 Configuration
+              </Typography>
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="caption" color="text.secondary">Redirect URI (register this in your OAuth provider):</Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontFamily: 'monospace',
+                    bgcolor: 'grey.100',
+                    p: 0.5,
+                    borderRadius: 1,
+                    wordBreak: 'break-all'
+                  }}
+                >
+                  {window.location.origin}{configuration.redirect_uri_path}
+                </Typography>
+              </Box>
+              <Typography variant="body2">• Auth URL: {configuration.auth_url}</Typography>
+              <Typography variant="body2">• Token URL: {configuration.token_url}</Typography>
+              {configuration.scope && <Typography variant="body2">• Scope: {configuration.scope}</Typography>}
+              <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                <Typography variant="caption" color="text.secondary">Token will be sent as:</Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontFamily: 'monospace',
+                    bgcolor: 'grey.100',
+                    p: 0.5,
+                    borderRadius: 1,
+                    mt: 0.5
+                  }}
+                >
+                  {configuration.token_header || 'Authorization'}: {configuration.token_prefix || 'Bearer'} {'<access_token>'}
+                </Typography>
+              </Box>
             </Alert>
           )}
 
@@ -211,32 +273,61 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
             label="Set as default"
           />
 
-          <Box sx={{ mt: 3, mb: 2 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              Credential Values
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Enter the secret values for this credential set
-            </Typography>
+          {/* Show different UI based on auth type */}
+          {isOAuth2 ? (
+            // OAuth2 Authorization Flow
+            <Box sx={{ mt: 3, mb: 2 }}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                This credential uses OAuth2 authorization. Click the button below to authorize
+                with the third-party service. You will be redirected to their login page.
+              </Alert>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                After authorization, you will be redirected back and your credential set will be created automatically.
+              </Typography>
+            </Box>
+          ) : (
+            // Standard credential value input
+            <Box sx={{ mt: 3, mb: 2 }}>
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                Credential Values
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Enter the secret values for this credential set
+              </Typography>
 
-            {Object.entries(requiredFields).map(([fieldName, fieldConfig]) =>
-              renderFieldInput(fieldName, fieldConfig)
-            )}
-          </Box>
+              {Object.entries(requiredFields).map(([fieldName, fieldConfig]) =>
+                renderFieldInput(fieldName, fieldConfig)
+              )}
+            </Box>
+          )}
         </DialogContent>
 
         <DialogActions>
           <Button onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            variant="contained"
-            disabled={loading}
-            startIcon={loading && <CircularProgress size={20} />}
-          >
-            {editingSet ? 'Update' : 'Create'}
-          </Button>
+          {isOAuth2 ? (
+            // OAuth2 Authorize button
+            <Button
+              variant="contained"
+              color="primary"
+              disabled={loading || !formData.name.trim()}
+              onClick={handleOAuth2Authorize}
+              startIcon={loading ? <CircularProgress size={20} /> : <OpenInNewIcon />}
+            >
+              Authorize
+            </Button>
+          ) : (
+            // Standard submit button
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={loading}
+              startIcon={loading && <CircularProgress size={20} />}
+            >
+              {editingSet ? 'Update' : 'Create'}
+            </Button>
+          )}
         </DialogActions>
       </form>
     </Dialog>

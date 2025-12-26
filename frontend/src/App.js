@@ -54,7 +54,7 @@ const theme = createTheme({
 const drawerWidth = 240;
 
 function App() {
-  const [currentView, setCurrentView] = useState('workflows');
+  const [currentView, setCurrentView] = useState('sequences');
   const [selectedConnector, setSelectedConnector] = useState(null);
   const [selectedCredentialForSets, setSelectedCredentialForSets] = useState(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState(null);
@@ -151,14 +151,14 @@ function App() {
   };
 
   const navigationItems = [
-    { key: 'workflows', label: 'Workflows', icon: <WorkflowsIcon /> },
+    // { key: 'workflows', label: 'Workflows', icon: <WorkflowsIcon /> },  // Hidden
     { key: 'events', label: 'Events', icon: <EventsIcon /> },
     { key: 'sequences', label: 'Sequences', icon: <SequencesIcon /> },
     { key: 'connectors', label: 'Connectors', icon: <ConnectorsIcon /> },
     { key: 'credentials', label: 'Credentials', icon: <CredentialsIcon /> },
     { key: 'activity-logs', label: 'Activity Logs', icon: <ActivityLogsIcon /> },
     { key: 'execution-logs', label: 'Execution Logs', icon: <ExecutionLogsIcon /> },
-    { key: 'api-logs', label: 'API Logs', icon: <ApiLogsIcon /> },
+    // { key: 'api-logs', label: 'API Logs', icon: <ApiLogsIcon /> },  // Hidden
   ];
 
   return (

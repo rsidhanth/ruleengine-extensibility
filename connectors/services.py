@@ -46,9 +46,29 @@ class ConnectorService:
                 return None, {'Authorization': f'Bearer {bearer_token}'}
 
             elif credential.auth_type == 'oauth2':
-                access_token = credential_values.get('oauth2_access_token', '')
+                # Check if token needs refresh (use OAuth2Service for this)
+                try:
+                    from .oauth2_service import OAuth2Service
+                    if OAuth2Service.is_token_expired(credential_set):
+                        logger.info(f"OAuth2 token expired for credential set, refreshing...")
+                        OAuth2Service.refresh_token(credential_set)
+                        # Reload credential values after refresh
+                        credential_set.refresh_from_db()
+                        credential_values = credential_set.credential_values or {}
+                except Exception as e:
+                    logger.warning(f"Error checking/refreshing OAuth2 token: {e}")
+
+                # OAuth2 tokens can be stored as 'access_token' (from OAuth2 callback)
+                # or 'oauth2_access_token' (legacy format)
+                access_token = credential_values.get('access_token') or credential_values.get('oauth2_access_token', '')
                 if access_token:
-                    return None, {'Authorization': f'Bearer {access_token}'}
+                    # Use configured token header and prefix, with defaults
+                    header_name = credential.oauth2_token_header or 'Authorization'
+                    token_prefix = credential.oauth2_token_prefix or 'Bearer'
+                    if token_prefix:
+                        return None, {header_name: f'{token_prefix} {access_token}'}
+                    else:
+                        return None, {header_name: access_token}
                 return None, {}
 
             elif credential.auth_type == 'custom':
@@ -71,7 +91,13 @@ class ConnectorService:
 
             elif credential.auth_type == 'oauth2':
                 if credential.oauth2_access_token:
-                    return None, {'Authorization': f'Bearer {credential.oauth2_access_token}'}
+                    # Use configured token header and prefix, with defaults
+                    header_name = credential.oauth2_token_header or 'Authorization'
+                    token_prefix = credential.oauth2_token_prefix or 'Bearer'
+                    if token_prefix:
+                        return None, {header_name: f'{token_prefix} {credential.oauth2_access_token}'}
+                    else:
+                        return None, {header_name: credential.oauth2_access_token}
                 return None, {}
 
             elif credential.auth_type == 'custom':

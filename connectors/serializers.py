@@ -72,7 +72,16 @@ class CredentialSerializer(serializers.ModelSerializer):
 
     def get_configuration(self, obj):
         """Returns the configuration (non-secret) settings"""
-        return obj.get_configuration_summary()
+        config = obj.get_configuration_summary()
+
+        # For OAuth2, add the redirect URI that users need to register
+        if obj.auth_type == 'oauth2':
+            # Generate the redirect URI based on common patterns
+            # This will be the actual URL when accessed via request context
+            config['redirect_uri_path'] = '/api/oauth2/callback/'
+            config['redirect_uri_note'] = 'Register this redirect URI in your OAuth2 provider settings'
+
+        return config
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -101,6 +110,7 @@ class ConnectorActionSerializer(serializers.ModelSerializer):
 class ConnectorSerializer(serializers.ModelSerializer):
     actions = ConnectorActionSerializer(many=True, read_only=True)
     credential_name = serializers.CharField(source='credential.name', read_only=True)
+    credential_auth_type = serializers.CharField(source='credential.auth_type', read_only=True)
     credential_sets = serializers.SerializerMethodField()
     credential_sets_count = serializers.SerializerMethodField()
 

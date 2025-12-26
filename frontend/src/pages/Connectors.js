@@ -30,6 +30,7 @@ import { connectorsApi } from '../services/api';
 import ConnectorForm from '../components/ConnectorForm';
 import ImportModal from '../components/ImportModal';
 import ConnectorConflictDialog from '../components/ConnectorConflictDialog';
+import CredentialSetForm from '../components/CredentialSetForm';
 
 const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const [connectors, setConnectors] = useState([]);
@@ -41,6 +42,8 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [connectorConflictData, setConnectorConflictData] = useState(null);
   const [importDataCache, setImportDataCache] = useState(null);
+  const [credentialSetFormOpen, setCredentialSetFormOpen] = useState(false);
+  const [selectedCredentialForSet, setSelectedCredentialForSet] = useState(null);
 
   useEffect(() => {
     loadConnectors();
@@ -101,6 +104,23 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
       };
       onNavigateToCredentialSets(credential);
     }
+  };
+
+  const handleAddCredentialSet = (connector) => {
+    // Construct the credential object needed by CredentialSetForm
+    const credential = {
+      id: connector.credential,
+      name: connector.credential_name,
+      auth_type: connector.credential_auth_type
+    };
+    setSelectedCredentialForSet(credential);
+    setCredentialSetFormOpen(true);
+  };
+
+  const handleCredentialSetSaved = () => {
+    setSuccessMessage('Credential set created successfully');
+    setTimeout(() => setSuccessMessage(''), 3000);
+    loadConnectors(); // Refresh to update credential sets count
   };
 
   const handleToggleStatus = async (connector) => {
@@ -308,21 +328,36 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
                 <TableCell>
                   {connector.credential_name ? (
                     <Box>
-                      <Tooltip title="Click to view and manage credential sets">
-                        <Button
-                          size="small"
-                          variant={connector.credential_sets_count > 0 ? "outlined" : "text"}
-                          color={connector.credential_sets_count > 0 ? "primary" : "error"}
-                          onClick={() => handleCredentialSetsClick(connector)}
-                          sx={{ textTransform: 'none' }}
-                        >
-                          {connector.credential_sets_count > 0 ? (
-                            `${connector.credential_sets_count} set${connector.credential_sets_count !== 1 ? 's' : ''}`
-                          ) : (
-                            'No sets'
-                          )}
-                        </Button>
-                      </Tooltip>
+                      {connector.credential_sets_count > 0 ? (
+                        <Tooltip title="Click to view and manage credential sets">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="primary"
+                            onClick={() => handleCredentialSetsClick(connector)}
+                            sx={{ textTransform: 'none' }}
+                          >
+                            {`${connector.credential_sets_count} set${connector.credential_sets_count !== 1 ? 's' : ''}`}
+                          </Button>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="Add credentials to enable this connector">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            onClick={() => handleAddCredentialSet(connector)}
+                            sx={{
+                              textTransform: 'none',
+                              fontSize: '0.75rem',
+                              py: 0.25,
+                              px: 1,
+                            }}
+                          >
+                            + Add Set
+                          </Button>
+                        </Tooltip>
+                      )}
                       <Typography variant="caption" color="textSecondary" display="block">
                         Profile: {connector.credential_name}
                       </Typography>
@@ -424,6 +459,16 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
         }}
         onConfirm={handleConflictResolve}
         conflictData={connectorConflictData}
+      />
+
+      <CredentialSetForm
+        open={credentialSetFormOpen}
+        onClose={() => {
+          setCredentialSetFormOpen(false);
+          setSelectedCredentialForSet(null);
+        }}
+        credential={selectedCredentialForSet}
+        onSave={handleCredentialSetSaved}
       />
     </Container>
   );

@@ -32,6 +32,12 @@ class Credential(models.Model):
     oauth2_token_url = models.URLField(blank=True, help_text="OAuth2 token URL")
     oauth2_scope = models.CharField(max_length=255, blank=True, help_text="OAuth2 scope")
 
+    # OAuth2 token header configuration
+    oauth2_token_header = models.CharField(max_length=50, default='Authorization', blank=True,
+                                           help_text="Header name for passing OAuth2 token (e.g., 'Authorization')")
+    oauth2_token_prefix = models.CharField(max_length=50, default='Bearer', blank=True,
+                                           help_text="Prefix before token value (e.g., 'Bearer', 'Zoho-oauthtoken')")
+
     # Custom Auth configuration - defines structure, not values
     custom_auth_config = models.JSONField(default=dict, blank=True, help_text="Custom authentication structure configuration (field names, types, descriptions)")
 
@@ -75,10 +81,9 @@ class Credential(models.Model):
                 'bearer_token': {'label': 'Bearer Token', 'type': 'password', 'required': True}
             }
         elif self.auth_type == 'oauth2':
-            return {
-                'client_id': {'label': 'Client ID', 'type': 'text', 'required': True},
-                'client_secret': {'label': 'Client Secret', 'type': 'password', 'required': True}
-            }
+            # OAuth2 uses Authorization Code flow - no manual input needed
+            # User clicks "Authorize" button and tokens are obtained automatically
+            return {}
         elif self.auth_type == 'custom':
             # Parse custom_auth_config to determine fields
             # Expected format: {'fields': [{'name': 'field_name', 'label': 'Field Label', 'type': 'text', 'required': True}]}
@@ -107,6 +112,8 @@ class Credential(models.Model):
             config['auth_url'] = self.oauth2_auth_url
             config['token_url'] = self.oauth2_token_url
             config['scope'] = self.oauth2_scope
+            config['token_header'] = self.oauth2_token_header or 'Authorization'
+            config['token_prefix'] = self.oauth2_token_prefix or 'Bearer'
         elif self.auth_type == 'custom':
             config['structure'] = self.custom_auth_config
 
@@ -180,6 +187,48 @@ class CredentialSet(models.Model):
             ).exclude(pk=self.pk).update(is_default=False)
 
         super().save(*args, **kwargs)
+
+
+class OAuth2State(models.Model):
+    """
+    Temporary storage for OAuth2 state parameters during authorization flow.
+
+    The state parameter is used for:
+    1. CSRF protection - ensures callback is from a request we initiated
+    2. Context tracking - links callback to the credential profile and set name
+
+    States are auto-cleaned after expiration.
+    """
+    state = models.CharField(max_length=64, unique=True, db_index=True,
+                            help_text="Random unique state string for OAuth2 flow")
+    credential = models.ForeignKey(Credential, on_delete=models.CASCADE,
+                                   related_name='oauth2_states',
+                                   help_text="Credential profile this authorization is for")
+    set_name = models.CharField(max_length=100,
+                               help_text="Name for the credential set to be created")
+    is_default = models.BooleanField(default=False,
+                                     help_text="Whether to set this as default credential set")
+
+    # For tracking the frontend redirect after completion
+    redirect_url = models.URLField(blank=True,
+                                   help_text="URL to redirect user after successful authorization")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(help_text="State expires after this time (typically 10 minutes)")
+
+    def __str__(self):
+        return f"OAuth2 State for {self.credential.name} - {self.set_name}"
+
+    def is_expired(self):
+        from django.utils import timezone
+        return timezone.now() > self.expires_at
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['state']),
+            models.Index(fields=['expires_at']),
+        ]
 
 
 class CustomAuthConfig(models.Model):
