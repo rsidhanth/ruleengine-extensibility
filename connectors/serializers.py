@@ -7,7 +7,9 @@ from .models import (
 
 class CredentialSetSerializer(serializers.ModelSerializer):
     credential_name = serializers.CharField(source='credential.name', read_only=True)
+    credential_auth_type = serializers.CharField(source='credential.auth_type', read_only=True)
     created_by_email = serializers.CharField(source='created_by.email', read_only=True)
+    token_status = serializers.SerializerMethodField()
 
     class Meta:
         model = CredentialSet
@@ -15,6 +17,11 @@ class CredentialSetSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'credential_values': {'write_only': True},
         }
+
+    def get_token_status(self, obj):
+        """Get OAuth2 token status if applicable"""
+        from .oauth2_service import OAuth2Service
+        return OAuth2Service.get_token_status(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

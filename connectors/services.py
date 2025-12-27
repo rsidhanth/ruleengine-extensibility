@@ -71,6 +71,33 @@ class ConnectorService:
                         return None, {header_name: access_token}
                 return None, {}
 
+            elif credential.auth_type == 'oauth2_client_credentials':
+                # Client Credentials flow - tokens are fetched lazily
+                try:
+                    from .oauth2_service import OAuth2Service
+                    access_token = credential_values.get('access_token')
+
+                    # Check if we need to fetch/refresh the token
+                    if not access_token or OAuth2Service.is_token_expired(credential_set):
+                        logger.info(f"OAuth2 Client Credentials token missing or expired, fetching...")
+                        OAuth2Service.fetch_client_credentials_token(credential, credential_set)
+                        # Reload credential values after fetch
+                        credential_set.refresh_from_db()
+                        credential_values = credential_set.credential_values or {}
+                        access_token = credential_values.get('access_token')
+                except Exception as e:
+                    logger.warning(f"Error fetching OAuth2 Client Credentials token: {e}")
+
+                if access_token:
+                    # Use configured token header and prefix, with defaults
+                    header_name = credential.oauth2_token_header or 'Authorization'
+                    token_prefix = credential.oauth2_token_prefix or 'Bearer'
+                    if token_prefix:
+                        return None, {header_name: f'{token_prefix} {access_token}'}
+                    else:
+                        return None, {header_name: access_token}
+                return None, {}
+
             elif credential.auth_type == 'custom':
                 # Use custom authentication service with credential set
                 custom_auth_service = CustomAuthService()

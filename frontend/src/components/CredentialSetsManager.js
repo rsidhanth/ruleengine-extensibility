@@ -25,6 +25,11 @@ import {
   Delete as DeleteIcon,
   Star as StarIcon,
   StarBorder as StarBorderIcon,
+  Refresh as RefreshIcon,
+  CheckCircle as ValidIcon,
+  Warning as WarningIcon,
+  Error as ErrorIcon,
+  HelpOutline as UnknownIcon,
 } from '@mui/icons-material';
 import { credentialSetsApi } from '../services/api';
 import CredentialSetForm from './CredentialSetForm';
@@ -35,6 +40,10 @@ const CredentialSetsManager = ({ open, onClose, credential }) => {
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingSet, setEditingSet] = useState(null);
+  const [refreshing, setRefreshing] = useState({});
+
+  // Check if this credential uses OAuth2 (either flow)
+  const isOAuth2 = credential?.auth_type === 'oauth2' || credential?.auth_type === 'oauth2_client_credentials';
 
   useEffect(() => {
     if (open && credential) {
@@ -99,6 +108,53 @@ const CredentialSetsManager = ({ open, onClose, credential }) => {
     });
   };
 
+  const handleRefreshToken = async (setId) => {
+    setRefreshing(prev => ({ ...prev, [setId]: true }));
+    setError('');
+    try {
+      await credentialSetsApi.refreshToken(setId);
+      loadCredentialSets(); // Reload to get updated status
+    } catch (err) {
+      console.error('Error refreshing token:', err);
+      setError(err.response?.data?.error || 'Failed to refresh token');
+    } finally {
+      setRefreshing(prev => ({ ...prev, [setId]: false }));
+    }
+  };
+
+  const renderTokenStatus = (set) => {
+    const status = set.token_status;
+    if (!status || status.status === 'not_applicable') {
+      return null;
+    }
+
+    const statusConfig = {
+      valid: { icon: <ValidIcon fontSize="small" />, color: 'success', label: 'Valid' },
+      expiring_soon: { icon: <WarningIcon fontSize="small" />, color: 'warning', label: 'Expiring Soon' },
+      expired: { icon: <ErrorIcon fontSize="small" />, color: 'error', label: 'Expired' },
+      not_fetched: { icon: <UnknownIcon fontSize="small" />, color: 'default', label: 'Not Fetched' },
+      no_expiry: { icon: <UnknownIcon fontSize="small" />, color: 'default', label: 'No Expiry Info' },
+      unknown: { icon: <UnknownIcon fontSize="small" />, color: 'default', label: 'Unknown' },
+    };
+
+    const config = statusConfig[status.status] || statusConfig.unknown;
+    const tooltipText = status.expires_at
+      ? `Expires: ${new Date(status.expires_at).toLocaleString()}`
+      : status.message;
+
+    return (
+      <Tooltip title={tooltipText}>
+        <Chip
+          icon={config.icon}
+          label={config.label}
+          size="small"
+          color={config.color}
+          variant="outlined"
+        />
+      </Tooltip>
+    );
+  };
+
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -149,6 +205,9 @@ const CredentialSetsManager = ({ open, onClose, credential }) => {
                   <TableRow>
                     <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Default</TableCell>
+                    {isOAuth2 && (
+                      <TableCell sx={{ fontWeight: 600 }}>Token Status</TableCell>
+                    )}
                     <TableCell sx={{ fontWeight: 600 }}>Created By</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Created At</TableCell>
                     <TableCell sx={{ fontWeight: 600 }} align="right">Actions</TableCell>
@@ -174,6 +233,11 @@ const CredentialSetsManager = ({ open, onClose, credential }) => {
                           <StarBorderIcon sx={{ color: 'text.disabled', fontSize: 20 }} />
                         )}
                       </TableCell>
+                      {isOAuth2 && (
+                        <TableCell>
+                          {renderTokenStatus(set)}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <Typography variant="body2" color="text.secondary">
                           {set.created_by_email || 'Unknown'}
@@ -185,6 +249,22 @@ const CredentialSetsManager = ({ open, onClose, credential }) => {
                         </Typography>
                       </TableCell>
                       <TableCell align="right">
+                        {isOAuth2 && (
+                          <Tooltip title="Refresh Token">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRefreshToken(set.id)}
+                              disabled={refreshing[set.id]}
+                              color="primary"
+                            >
+                              {refreshing[set.id] ? (
+                                <CircularProgress size={16} />
+                              ) : (
+                                <RefreshIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         <Tooltip title="Edit">
                           <IconButton
                             size="small"

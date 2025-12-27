@@ -226,9 +226,154 @@ class OAuth2Service:
         }
 
     @classmethod
+    def fetch_client_credentials_token(cls, credential, credential_set):
+        """
+        Fetch OAuth2 token using Client Credentials grant type.
+
+        Args:
+            credential: Credential profile with OAuth2 config
+            credential_set: CredentialSet with client_id and client_secret
+
+        Returns:
+            Updated credential_values dict with access token
+        """
+        if credential.auth_type != 'oauth2_client_credentials':
+            raise OAuth2Error("Credential is not OAuth2 Client Credentials type")
+
+        if not credential.oauth2_token_url:
+            raise OAuth2Error("Token URL not configured in credential profile")
+
+        credential_values = credential_set.credential_values or {}
+        client_id = credential_values.get('client_id')
+        client_secret = credential_values.get('client_secret')
+
+        if not client_id or not client_secret:
+            raise OAuth2Error("Client ID and Client Secret are required in credential set")
+
+        token_data = {
+            'grant_type': 'client_credentials',
+            'client_id': client_id,
+            'client_secret': client_secret,
+        }
+
+        if credential.oauth2_scope:
+            token_data['scope'] = credential.oauth2_scope
+
+        try:
+            response = requests.post(
+                credential.oauth2_token_url,
+                data=token_data,
+                headers={'Accept': 'application/json'},
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Client credentials token fetch failed: {response.status_code} - {response.text}")
+                raise OAuth2Error(f"Failed to fetch token: {response.text}")
+
+            token_response = response.json()
+
+        except requests.RequestException as e:
+            logger.error(f"Client credentials token request failed: {str(e)}")
+            raise OAuth2Error(f"Failed to connect to token endpoint: {str(e)}")
+
+        access_token = token_response.get('access_token')
+        if not access_token:
+            raise OAuth2Error("No access token received from provider")
+
+        expires_in = token_response.get('expires_in')
+        token_expires_at = None
+        if expires_in:
+            token_expires_at = (timezone.now() + timedelta(seconds=int(expires_in))).isoformat()
+
+        # Update credential_values with token while preserving client_id/secret
+        credential_set.credential_values = {
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'access_token': access_token,
+            'token_type': token_response.get('token_type', 'Bearer'),
+            'token_expires_at': token_expires_at,
+        }
+        credential_set.save()
+
+        logger.info(f"Successfully fetched client credentials token for '{credential_set.name}'")
+
+        return credential_set.credential_values
+
+    @classmethod
+    def get_token_status(cls, credential_set):
+        """
+        Get the token status for a credential set.
+
+        Returns:
+            dict with status, expires_at, and message
+        """
+        credential = credential_set.credential
+        if credential.auth_type not in ('oauth2', 'oauth2_client_credentials'):
+            return {'status': 'not_applicable', 'expires_at': None, 'message': 'Not an OAuth2 credential'}
+
+        credential_values = credential_set.credential_values or {}
+        access_token = credential_values.get('access_token')
+        token_expires_at = credential_values.get('token_expires_at')
+
+        # Check if token has never been fetched
+        if not access_token:
+            return {
+                'status': 'not_fetched',
+                'expires_at': None,
+                'message': 'Token not yet fetched'
+            }
+
+        if not token_expires_at:
+            return {
+                'status': 'no_expiry',
+                'expires_at': None,
+                'message': 'No expiration information'
+            }
+
+        try:
+            from datetime import datetime
+            if isinstance(token_expires_at, str):
+                expires_at = datetime.fromisoformat(token_expires_at.replace('Z', '+00:00'))
+                if timezone.is_naive(expires_at):
+                    expires_at = timezone.make_aware(expires_at)
+            else:
+                expires_at = token_expires_at
+
+            now = timezone.now()
+            buffer_5min = timedelta(minutes=5)
+
+            if now >= expires_at:
+                return {
+                    'status': 'expired',
+                    'expires_at': expires_at.isoformat(),
+                    'message': 'Token has expired'
+                }
+            elif now >= (expires_at - buffer_5min):
+                return {
+                    'status': 'expiring_soon',
+                    'expires_at': expires_at.isoformat(),
+                    'message': 'Token expires within 5 minutes'
+                }
+            else:
+                return {
+                    'status': 'valid',
+                    'expires_at': expires_at.isoformat(),
+                    'message': 'Token is valid'
+                }
+        except Exception as e:
+            logger.warning(f"Error checking token status: {e}")
+            return {
+                'status': 'unknown',
+                'expires_at': None,
+                'message': f'Error checking status: {str(e)}'
+            }
+
+    @classmethod
     def refresh_token(cls, credential_set):
         """
         Refresh an expired access token using the refresh token.
+        For client credentials, re-fetches using client_id/secret.
 
         Args:
             credential_set: The CredentialSet instance to refresh
@@ -238,8 +383,12 @@ class OAuth2Service:
         """
         credential = credential_set.credential
 
-        if credential.auth_type != 'oauth2':
-            raise OAuth2Error("Credential is not OAuth2 type")
+        if credential.auth_type not in ('oauth2', 'oauth2_client_credentials'):
+            raise OAuth2Error("Credential is not an OAuth2 type")
+
+        # For client credentials, use the fetch method instead
+        if credential.auth_type == 'oauth2_client_credentials':
+            return cls.fetch_client_credentials_token(credential, credential_set)
 
         credential_values = credential_set.credential_values
         refresh_token = credential_values.get('refresh_token')

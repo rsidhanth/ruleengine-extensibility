@@ -78,11 +78,19 @@ const CredentialForm = ({ open, onClose, onSave, credential = null }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate required OAuth2 fields
+    // Validate required OAuth2 Authorization Code fields
     if (formData.auth_type === 'oauth2') {
       if (!formData.oauth2_client_id || !formData.oauth2_client_secret ||
           !formData.oauth2_auth_url || !formData.oauth2_token_url) {
         setError('Please fill in all required OAuth2 fields');
+        return;
+      }
+    }
+
+    // Validate required OAuth2 Client Credentials fields
+    if (formData.auth_type === 'oauth2_client_credentials') {
+      if (!formData.oauth2_token_url) {
+        setError('Please fill in the Token URL');
         return;
       }
     }
@@ -290,6 +298,111 @@ const CredentialForm = ({ open, onClose, onSave, credential = null }) => {
             </Alert>
           </>
         );
+      case 'oauth2_client_credentials':
+        return (
+          <>
+            <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                OAuth2 Client Credentials Flow
+              </Typography>
+              <Typography variant="body2">
+                This flow is used for machine-to-machine authentication. No user redirect is required -
+                tokens are fetched directly using the client ID and secret.
+              </Typography>
+            </Alert>
+
+            <TextField
+              name="oauth2_client_id"
+              label="Client ID (Optional Default)"
+              value={formData.oauth2_client_id}
+              onChange={handleChange}
+              fullWidth
+              margin="normal"
+              helperText="Default Client ID - can be overridden in credential sets"
+            />
+            <TextField
+              name="oauth2_client_secret"
+              label="Client Secret (Optional Default)"
+              type="password"
+              value={formData.oauth2_client_secret}
+              onChange={handleChange}
+              fullWidth
+              margin="normal"
+              helperText="Default Client Secret - can be overridden in credential sets"
+            />
+            <TextField
+              name="oauth2_token_url"
+              label="Token URL"
+              value={formData.oauth2_token_url}
+              onChange={handleChange}
+              fullWidth
+              margin="normal"
+              required
+              helperText="e.g., https://oauth.example.com/token"
+            />
+            <TextField
+              name="oauth2_scope"
+              label="Scope (Optional)"
+              value={formData.oauth2_scope}
+              onChange={handleChange}
+              fullWidth
+              margin="normal"
+              helperText="Space-separated scopes (e.g., 'read write')"
+            />
+
+            <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>
+              Token Header Configuration
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                name="oauth2_token_header"
+                label="Token Header Name"
+                value={formData.oauth2_token_header}
+                onChange={handleChange}
+                margin="normal"
+                sx={{ flex: 1 }}
+                helperText="Header name (usually 'Authorization')"
+              />
+              <TextField
+                name="oauth2_token_prefix"
+                label="Token Prefix"
+                value={formData.oauth2_token_prefix}
+                onChange={handleChange}
+                margin="normal"
+                sx={{ flex: 1 }}
+                helperText="e.g., 'Bearer'"
+              />
+            </Box>
+
+            {/* Header Preview */}
+            <Alert severity="success" sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Header Preview
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  fontFamily: 'monospace',
+                  bgcolor: 'grey.100',
+                  p: 1,
+                  borderRadius: 1,
+                  wordBreak: 'break-all'
+                }}
+              >
+                {formData.oauth2_token_header || 'Authorization'}: {formData.oauth2_token_prefix || 'Bearer'} {'<access_token>'}
+              </Typography>
+            </Alert>
+
+            {/* Info about Credential Set */}
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              <Typography variant="body2">
+                <strong>Note:</strong> When creating a Credential Set, you will enter the Client ID and Client Secret.
+                The access token will be fetched automatically when the credential is used.
+              </Typography>
+            </Alert>
+          </>
+        );
       case 'custom':
         return (
           <Box sx={{ mt: 2 }}>
@@ -376,7 +489,8 @@ const CredentialForm = ({ open, onClose, onSave, credential = null }) => {
               <MenuItem value="basic">Basic Authentication</MenuItem>
               <MenuItem value="api_key">API Key</MenuItem>
               <MenuItem value="bearer">Bearer Token</MenuItem>
-              <MenuItem value="oauth2">OAuth 2.0</MenuItem>
+              <MenuItem value="oauth2">OAuth 2.0 (Authorization Code)</MenuItem>
+              <MenuItem value="oauth2_client_credentials">OAuth 2.0 (Client Credentials)</MenuItem>
               <MenuItem value="custom">Custom Authentication</MenuItem>
             </Select>
           </FormControl>

@@ -39,6 +39,9 @@ export const credentialSetsApi = {
   create: (data) => api.post('/credential-sets/', data),
   update: (id, data) => api.put(`/credential-sets/${id}/`, data),
   delete: (id) => api.delete(`/credential-sets/${id}/`),
+  // OAuth2 Token Management
+  refreshToken: (id) => api.post(`/credential-sets/${id}/refresh_token/`),
+  getTokenStatus: (id) => api.get(`/credential-sets/${id}/token_status/`),
 };
 
 export const connectorsApi = {

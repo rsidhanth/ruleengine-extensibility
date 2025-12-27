@@ -99,6 +99,48 @@ class CredentialSetViewSet(viewsets.ModelViewSet):
     search_fields = ['name']
     ordering = ['-is_default', 'name']
 
+    @action(detail=True, methods=['post'])
+    def refresh_token(self, request, pk=None):
+        """
+        Manually refresh the OAuth2 token for this credential set.
+        For Authorization Code flow: uses refresh_token
+        For Client Credentials flow: re-fetches using client_id/secret
+        """
+        credential_set = self.get_object()
+        credential = credential_set.credential
+
+        if credential.auth_type not in ('oauth2', 'oauth2_client_credentials'):
+            return Response(
+                {'error': 'This credential set does not use OAuth2'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            OAuth2Service.refresh_token(credential_set)
+            # Reload to get updated values
+            credential_set.refresh_from_db()
+            token_status = OAuth2Service.get_token_status(credential_set)
+            return Response({
+                'success': True,
+                'message': 'Token refreshed successfully',
+                'token_status': token_status
+            })
+        except OAuth2Error as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['get'])
+    def token_status(self, request, pk=None):
+        """
+        Get the token status for this credential set.
+        Returns status (valid/expiring_soon/expired/not_fetched/not_applicable), expires_at, and message.
+        """
+        credential_set = self.get_object()
+        token_status = OAuth2Service.get_token_status(credential_set)
+        return Response(token_status)
+
 
 class ConnectorViewSet(viewsets.ModelViewSet):
     queryset = Connector.objects.all()

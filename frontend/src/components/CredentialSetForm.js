@@ -45,13 +45,26 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
         credential_values: {}, // Don't show existing values for security
       });
     } else {
+      // For new credential sets, pre-populate from profile defaults
+      const defaultValues = {};
+
+      // For oauth2_client_credentials, pre-populate client_id/secret from profile
+      if (credential?.auth_type === 'oauth2_client_credentials') {
+        if (credential.oauth2_client_id) {
+          defaultValues.client_id = credential.oauth2_client_id;
+        }
+        if (credential.oauth2_client_secret) {
+          defaultValues.client_secret = credential.oauth2_client_secret;
+        }
+      }
+
       setFormData({
         name: '',
         is_default: false,
-        credential_values: {},
+        credential_values: defaultValues,
       });
     }
-  }, [editingSet, open]);
+  }, [editingSet, open, credential]);
 
   const loadRequiredFields = async () => {
     try {
@@ -156,7 +169,8 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
     }
   };
 
-  const isOAuth2 = configuration.auth_type === 'oauth2';
+  const isOAuth2AuthCode = configuration.auth_type === 'oauth2';
+  const isOAuth2ClientCredentials = configuration.auth_type === 'oauth2_client_credentials';
 
   const renderFieldInput = (fieldName, fieldConfig) => {
     const isPasswordType = fieldConfig.type === 'password';
@@ -212,10 +226,10 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
             </Alert>
           )}
 
-          {configuration.auth_type === 'oauth2' && (
+          {isOAuth2AuthCode && (
             <Alert severity="info" sx={{ mb: 2 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
-                OAuth2 Configuration
+                OAuth2 Authorization Code Flow
               </Typography>
               <Typography variant="body2">• Auth URL: {configuration.auth_url}</Typography>
               <Typography variant="body2">• Token URL: {configuration.token_url}</Typography>
@@ -235,6 +249,35 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
                   {configuration.token_header || 'Authorization'}: {configuration.token_prefix || 'Bearer'} {'<access_token>'}
                 </Typography>
               </Box>
+            </Alert>
+          )}
+
+          {isOAuth2ClientCredentials && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                OAuth2 Client Credentials Flow
+              </Typography>
+              <Typography variant="body2">• Token URL: {configuration.token_url}</Typography>
+              {configuration.scope && <Typography variant="body2">• Scope: {configuration.scope}</Typography>}
+              <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                <Typography variant="caption" color="text.secondary">Token will be sent as:</Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontFamily: 'monospace',
+                    bgcolor: 'grey.100',
+                    p: 0.5,
+                    borderRadius: 1,
+                    mt: 0.5
+                  }}
+                >
+                  {configuration.token_header || 'Authorization'}: {configuration.token_prefix || 'Bearer'} {'<access_token>'}
+                </Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                Access token will be fetched automatically when the credential is used.
+                {credential?.oauth2_client_id && ' Client credentials are pre-populated from the profile.'}
+              </Typography>
             </Alert>
           )}
 
@@ -259,8 +302,8 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
           />
 
           {/* Show different UI based on auth type */}
-          {isOAuth2 ? (
-            // OAuth2 Authorization Flow
+          {isOAuth2AuthCode ? (
+            // OAuth2 Authorization Code Flow - redirect to provider
             <Box sx={{ mt: 3, mb: 2 }}>
               <Alert severity="info" sx={{ mb: 2 }}>
                 This credential uses OAuth2 authorization. Click the button below to authorize
@@ -270,18 +313,36 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
                 After authorization, you will be redirected back and your credential set will be created automatically.
               </Typography>
             </Box>
-          ) : (
-            // Standard credential value input
+          ) : isOAuth2ClientCredentials ? (
+            // OAuth2 Client Credentials Flow - enter client_id and client_secret
             <Box sx={{ mt: 3, mb: 2 }}>
               <Typography variant="h6" sx={{ mb: 1 }}>
-                Credential Values
+                Client Credentials
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Enter the secret values for this credential set
+                Enter the client credentials from your OAuth provider. The access token will be fetched automatically.
               </Typography>
 
               {Object.entries(requiredFields).map(([fieldName, fieldConfig]) =>
                 renderFieldInput(fieldName, fieldConfig)
+              )}
+            </Box>
+          ) : (
+            // Standard credential value input
+            <Box sx={{ mt: 3, mb: 2 }}>
+              {Object.keys(requiredFields).length > 0 && (
+                <>
+                  <Typography variant="h6" sx={{ mb: 1 }}>
+                    Credential Values
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Enter the secret values for this credential set
+                  </Typography>
+
+                  {Object.entries(requiredFields).map(([fieldName, fieldConfig]) =>
+                    renderFieldInput(fieldName, fieldConfig)
+                  )}
+                </>
               )}
             </Box>
           )}
@@ -291,8 +352,8 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
           <Button onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          {isOAuth2 ? (
-            // OAuth2 Authorize button
+          {isOAuth2AuthCode ? (
+            // OAuth2 Authorization Code Flow - Authorize button
             <Button
               variant="contained"
               color="primary"
@@ -303,7 +364,7 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
               Authorize
             </Button>
           ) : (
-            // Standard submit button
+            // Standard submit button (for client_credentials and other types)
             <Button
               type="submit"
               variant="contained"

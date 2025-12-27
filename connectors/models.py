@@ -9,7 +9,8 @@ class Credential(models.Model):
         ('basic', 'Basic Authentication'),
         ('api_key', 'API Key'),
         ('bearer', 'Bearer Token'),
-        ('oauth2', 'OAuth 2.0'),
+        ('oauth2', 'OAuth 2.0 (Authorization Code)'),
+        ('oauth2_client_credentials', 'OAuth 2.0 (Client Credentials)'),
         ('custom', 'Custom Authentication'),
     ]
 
@@ -20,7 +21,7 @@ class Credential(models.Model):
 
     name = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    auth_type = models.CharField(max_length=10, choices=AUTH_TYPES, default='none')
+    auth_type = models.CharField(max_length=30, choices=AUTH_TYPES, default='none')
     credential_type = models.CharField(max_length=10, choices=CREDENTIAL_TYPES, default='custom', help_text="System or custom credential profile")
 
     # Configuration fields (non-secret) - these define the structure
@@ -84,6 +85,13 @@ class Credential(models.Model):
             # OAuth2 uses Authorization Code flow - no manual input needed
             # User clicks "Authorize" button and tokens are obtained automatically
             return {}
+        elif self.auth_type == 'oauth2_client_credentials':
+            # OAuth2 Client Credentials flow - user provides client_id and client_secret
+            # Access token is fetched automatically when API is called
+            return {
+                'client_id': {'label': 'Client ID', 'type': 'text', 'required': True},
+                'client_secret': {'label': 'Client Secret', 'type': 'password', 'required': True},
+            }
         elif self.auth_type == 'custom':
             # Parse custom_auth_config to determine fields
             # Expected format: {'fields': [{'name': 'field_name', 'label': 'Field Label', 'type': 'text', 'required': True}]}
@@ -110,6 +118,11 @@ class Credential(models.Model):
             config['api_key_header'] = self.api_key_header
         elif self.auth_type == 'oauth2':
             config['auth_url'] = self.oauth2_auth_url
+            config['token_url'] = self.oauth2_token_url
+            config['scope'] = self.oauth2_scope
+            config['token_header'] = self.oauth2_token_header or 'Authorization'
+            config['token_prefix'] = self.oauth2_token_prefix or 'Bearer'
+        elif self.auth_type == 'oauth2_client_credentials':
             config['token_url'] = self.oauth2_token_url
             config['scope'] = self.oauth2_scope
             config['token_header'] = self.oauth2_token_header or 'Authorization'
