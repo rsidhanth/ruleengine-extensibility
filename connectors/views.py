@@ -820,8 +820,9 @@ class SequenceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def validate_import(self, request):
-        """Validate sequence import dependencies"""
+        """Validate sequence import dependencies - matches by NAME, not ID"""
         data = request.data.get('data', {})
+        dependencies = request.data.get('dependencies', {})
 
         missing = {
             'events': [],
@@ -829,13 +830,40 @@ class SequenceViewSet(viewsets.ModelViewSet):
             'actions': []
         }
 
-        # Validate trigger events
+        # Build mapping from exported IDs to local IDs (for remapping during import)
+        id_mappings = {
+            'events': {},  # old_id -> new_id
+            'actions': {}  # old_id -> new_id
+        }
+
+        # Get event name mapping from dependencies
+        event_name_map = {}  # old_id -> name
+        for dep_event in dependencies.get('events', []):
+            event_name_map[dep_event['id']] = dep_event['name']
+
+        # Validate trigger events by NAME
         for event_id in data.get('trigger_events', []):
-            if not Event.objects.filter(id=event_id).exists():
-                missing['events'].append({
-                    'id': event_id,
-                    'context': 'trigger_events'
-                })
+            event_name = event_name_map.get(event_id)
+            if event_name:
+                # Try to find event by name
+                local_event = Event.objects.filter(name=event_name).first()
+                if local_event:
+                    id_mappings['events'][event_id] = local_event.id
+                else:
+                    missing['events'].append({
+                        'id': event_id,
+                        'name': event_name,
+                        'context': 'trigger_events'
+                    })
+            else:
+                # No name in dependencies, try direct ID match as fallback
+                if not Event.objects.filter(id=event_id).exists():
+                    missing['events'].append({
+                        'id': event_id,
+                        'context': 'trigger_events'
+                    })
+                else:
+                    id_mappings['events'][event_id] = event_id
 
         # Validate nodes
         for node in data.get('flow_nodes', []):
@@ -844,29 +872,61 @@ class SequenceViewSet(viewsets.ModelViewSet):
             if node_type == 'event':
                 event_id = node['data'].get('eventConfig', {}).get('eventId')
                 event_name = node['data'].get('eventConfig', {}).get('eventName')
-                if event_id and not Event.objects.filter(id=event_id).exists():
-                    missing['events'].append({
-                        'id': event_id,
-                        'name': event_name,
-                        'node': node['id']
-                    })
+
+                if event_id and event_id not in id_mappings['events']:
+                    # Try to find by name first
+                    local_event = Event.objects.filter(name=event_name).first() if event_name else None
+                    if local_event:
+                        id_mappings['events'][event_id] = local_event.id
+                    else:
+                        missing['events'].append({
+                            'id': event_id,
+                            'name': event_name,
+                            'node': node['id']
+                        })
 
             elif node_type == 'action':
                 action_id = node['data'].get('actionConfig', {}).get('actionId')
                 action_name = node['data'].get('actionConfig', {}).get('actionName')
                 connector_name = node['data'].get('actionConfig', {}).get('connectorName')
 
-                if action_id and not ConnectorAction.objects.filter(id=action_id).exists():
-                    missing['actions'].append({
-                        'id': action_id,
-                        'name': action_name,
-                        'connector': connector_name,
-                        'node': node['id']
-                    })
+                if action_id and action_id not in id_mappings['actions']:
+                    # Try to find action by name + connector name
+                    local_action = None
+                    if action_name and connector_name:
+                        local_action = ConnectorAction.objects.filter(
+                            name=action_name,
+                            connector__name=connector_name
+                        ).first()
 
-                    if connector_name and not Connector.objects.filter(name=connector_name).exists():
-                        if connector_name not in missing['connectors']:
-                            missing['connectors'].append(connector_name)
+                    if local_action:
+                        id_mappings['actions'][action_id] = local_action.id
+                    else:
+                        # Check if connector exists
+                        connector_exists = Connector.objects.filter(name=connector_name).exists() if connector_name else False
+
+                        missing['actions'].append({
+                            'id': action_id,
+                            'name': action_name,
+                            'connector': connector_name,
+                            'node': node['id']
+                        })
+
+                        if connector_name and not connector_exists:
+                            if connector_name not in missing['connectors']:
+                                missing['connectors'].append(connector_name)
+
+            elif node_type == 'event_trigger':
+                # Handle trigger node's triggerEvents array
+                trigger_events = node['data'].get('triggerEvents', [])
+                for trigger_event in trigger_events:
+                    te_id = trigger_event.get('id')
+                    te_name = trigger_event.get('name')
+                    if te_id and te_id not in id_mappings['events']:
+                        local_event = Event.objects.filter(name=te_name).first() if te_name else None
+                        if local_event:
+                            id_mappings['events'][te_id] = local_event.id
+                        # Note: missing trigger events are already captured from trigger_events array
 
         is_valid = (len(missing['events']) == 0 and
                     len(missing['connectors']) == 0 and
@@ -874,13 +934,15 @@ class SequenceViewSet(viewsets.ModelViewSet):
 
         return Response({
             'valid': is_valid,
-            'missing_dependencies': missing
+            'missing_dependencies': missing,
+            'id_mappings': id_mappings  # Return mappings for use during import
         })
 
     @action(detail=False, methods=['post'])
     def import_sequence(self, request):
-        """Import sequence after validation"""
+        """Import sequence after validation - remaps IDs to local environment"""
         from django.db import transaction
+        import copy
 
         data = request.data.get('data', {})
         name_override = request.data.get('name_override')
@@ -894,7 +956,7 @@ class SequenceViewSet(viewsets.ModelViewSet):
                 'message': f'Sequence "{sequence_name}" already exists'
             }, status=400)
 
-        # Validate dependencies (BLOCKING)
+        # Validate dependencies (BLOCKING) and get ID mappings
         validation_result = self.validate_import(request)
         if not validation_result.data['valid']:
             return Response({
@@ -904,26 +966,87 @@ class SequenceViewSet(viewsets.ModelViewSet):
                 'details': validation_result.data['missing_dependencies']
             }, status=400)
 
-        # Create sequence
+        # Get the ID mappings from validation
+        id_mappings = validation_result.data.get('id_mappings', {'events': {}, 'actions': {}})
+
+        # Deep copy data to avoid modifying original
+        remapped_data = copy.deepcopy(data)
+
+        # Remap trigger_events IDs
+        remapped_trigger_events = []
+        for old_event_id in remapped_data.get('trigger_events', []):
+            new_event_id = id_mappings['events'].get(old_event_id, old_event_id)
+            remapped_trigger_events.append(new_event_id)
+        remapped_data['trigger_events'] = remapped_trigger_events
+
+        # Remap IDs in flow_nodes
+        for node in remapped_data.get('flow_nodes', []):
+            node_type = node.get('data', {}).get('nodeType')
+
+            if node_type == 'event_trigger':
+                # Remap triggerEvents array
+                trigger_events = node['data'].get('triggerEvents', [])
+                for trigger_event in trigger_events:
+                    old_id = trigger_event.get('id')
+                    if old_id and old_id in id_mappings['events']:
+                        new_id = id_mappings['events'][old_id]
+                        trigger_event['id'] = new_id
+                        # Also update the local event data
+                        local_event = Event.objects.filter(id=new_id).first()
+                        if local_event:
+                            trigger_event['name'] = local_event.name
+                            trigger_event['event_id'] = local_event.event_id
+                            trigger_event['webhook_endpoint'] = f"/api/events/{new_id}/test_webhook/"
+
+            elif node_type == 'event':
+                event_config = node['data'].get('eventConfig', {})
+                old_event_id = event_config.get('eventId')
+                if old_event_id and old_event_id in id_mappings['events']:
+                    new_event_id = id_mappings['events'][old_event_id]
+                    event_config['eventId'] = new_event_id
+                    # Update event details from local DB
+                    local_event = Event.objects.filter(id=new_event_id).first()
+                    if local_event:
+                        event_config['eventName'] = local_event.name
+                        event_config['eventIdNumber'] = local_event.event_id
+
+            elif node_type == 'action':
+                action_config = node['data'].get('actionConfig', {})
+                old_action_id = action_config.get('actionId')
+                if old_action_id and old_action_id in id_mappings['actions']:
+                    new_action_id = id_mappings['actions'][old_action_id]
+                    action_config['actionId'] = new_action_id
+                    # Update connector ID and other details from local DB
+                    local_action = ConnectorAction.objects.filter(id=new_action_id).select_related('connector').first()
+                    if local_action:
+                        action_config['connectorId'] = local_action.connector.id
+                        action_config['connectorName'] = local_action.connector.name
+                        action_config['actionName'] = local_action.name
+                        action_config['httpMethod'] = local_action.http_method
+                        # Reset credential set - user will need to configure this
+                        action_config['credentialSetId'] = None
+
+        # Create sequence with remapped data
         try:
             with transaction.atomic():
                 sequence = Sequence.objects.create(
                     name=sequence_name,
-                    description=data.get('description', ''),
-                    sequence_type=data.get('sequence_type', 'custom'),
+                    description=remapped_data.get('description', ''),
+                    sequence_type=remapped_data.get('sequence_type', 'custom'),
                     status='inactive',  # Safe default
-                    flow_nodes=data.get('flow_nodes', []),
-                    flow_edges=data.get('flow_edges', []),
-                    trigger_events=data.get('trigger_events', []),
-                    variables=data.get('variables', []),
-                    version=data.get('version', '1.0'),
+                    flow_nodes=remapped_data.get('flow_nodes', []),
+                    flow_edges=remapped_data.get('flow_edges', []),
+                    trigger_events=remapped_data.get('trigger_events', []),
+                    variables=remapped_data.get('variables', []),
+                    version=remapped_data.get('version', '1.0'),
                     created_by=request.user if request.user.is_authenticated else None
                 )
 
                 return Response({
                     'success': True,
                     'sequence_id': sequence.sequence_id,
-                    'sequence_name': sequence.name
+                    'sequence_name': sequence.name,
+                    'message': 'Sequence imported successfully. Please review and configure credential sets for action nodes.'
                 })
         except Exception as e:
             return Response({
