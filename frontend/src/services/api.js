@@ -2,6 +2,17 @@ import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
+// Helper to get the backend origin (for OAuth redirect URI display)
+export const getBackendOrigin = () => {
+  try {
+    const url = new URL(API_BASE_URL);
+    return url.origin;
+  } catch {
+    // If API_BASE_URL is a relative path, use current origin
+    return window.location.origin;
+  }
+};
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {

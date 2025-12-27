@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import CustomAuthConfigDialog from './CustomAuthConfigDialog';
+import { getBackendOrigin } from '../services/api';
 
 const CredentialForm = ({ open, onClose, onSave, credential = null }) => {
   const [formData, setFormData] = useState({
@@ -172,7 +173,7 @@ const CredentialForm = ({ open, onClose, onSave, credential = null }) => {
                   mb: 1
                 }}
               >
-                {window.location.origin}/api/oauth2/callback/
+                {getBackendOrigin()}/api/oauth2/callback/
               </Typography>
               <Typography variant="caption" color="text.secondary">
                 Copy this URL and add it as an authorized redirect URI in your OAuth provider's app settings

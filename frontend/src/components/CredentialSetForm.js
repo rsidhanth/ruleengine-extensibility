@@ -217,21 +217,6 @@ const CredentialSetForm = ({ open, onClose, credential, editingSet = null, onSav
               <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                 OAuth2 Configuration
               </Typography>
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="caption" color="text.secondary">Redirect URI (register this in your OAuth provider):</Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontFamily: 'monospace',
-                    bgcolor: 'grey.100',
-                    p: 0.5,
-                    borderRadius: 1,
-                    wordBreak: 'break-all'
-                  }}
-                >
-                  {window.location.origin}{configuration.redirect_uri_path}
-                </Typography>
-              </Box>
               <Typography variant="body2">• Auth URL: {configuration.auth_url}</Typography>
               <Typography variant="body2">• Token URL: {configuration.token_url}</Typography>
               {configuration.scope && <Typography variant="body2">• Scope: {configuration.scope}</Typography>}
