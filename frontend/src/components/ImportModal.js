@@ -1,54 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Box,
-  Typography,
-  CircularProgress,
-  Alert,
-} from '@mui/material';
-import { CloudUpload as UploadIcon } from '@mui/icons-material';
+  Modal,
+  ButtonTypes,
+} from '@leegality/leegality-react-component-library';
+import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
+import FileUpload, { FileUploadTypes } from '@leegality/leegality-react-component-library/dist/file-upload';
 
 const ImportModal = ({ open, onClose, onImport, title = 'Import' }) => {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
+  const [resetFiles, setResetFiles] = useState(false);
+  const fileUploadRef = useRef(null);
 
-  const handleDrag = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === 'dragenter' || e.type === 'dragover') {
-      setDragActive(true);
-    } else if (e.type === 'dragleave') {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleFileInput = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      handleFile(e.target.files[0]);
-    }
-  };
-
-  const handleFile = (selectedFile) => {
+  const handleFile = useCallback((selectedFile) => {
     setError(null);
 
-    if (selectedFile.type !== 'application/json') {
+    if (selectedFile.type !== 'application/json' && !selectedFile.name.endsWith('.json')) {
       setError('Please select a valid JSON file');
       return;
     }
@@ -67,7 +36,21 @@ const ImportModal = ({ open, onClose, onImport, title = 'Import' }) => {
       }
     };
     reader.readAsText(selectedFile);
-  };
+  }, []);
+
+  const handleFileDrop = useCallback((files) => {
+    if (files && files.length > 0) {
+      // FileUpload returns array of file objects with .file property
+      const fileObj = files[0].file || files[0];
+      handleFile(fileObj);
+    }
+  }, [handleFile]);
+
+  const handleFileDelete = useCallback(() => {
+    setFile(null);
+    setPreview(null);
+    setError(null);
+  }, []);
 
   const handleImport = async () => {
     if (!file) {
@@ -83,7 +66,6 @@ const ImportModal = ({ open, onClose, onImport, title = 'Import' }) => {
       handleClose();
     } catch (err) {
       setError(err.message || 'Import failed');
-    } finally {
       setLoading(false);
     }
   };
@@ -93,88 +75,112 @@ const ImportModal = ({ open, onClose, onImport, title = 'Import' }) => {
     setPreview(null);
     setError(null);
     setLoading(false);
-    setDragActive(false);
+    setResetFiles(true);
+    setTimeout(() => setResetFiles(false), 100);
     onClose();
   };
 
+  const handleButtonClick = (buttonId) => {
+    if (buttonId === 'cancel') {
+      handleClose();
+    } else if (buttonId === 'import') {
+      handleImport();
+    }
+  };
+
+  // Fix for click-to-upload not working inside Modal
+  // The FileUpload component's click handler doesn't properly trigger the file input
+  const handleUploadAreaClick = useCallback(() => {
+    const fileInput = fileUploadRef.current?.querySelector('input[type="file"]');
+    if (fileInput) {
+      fileInput.click();
+    }
+  }, []);
+
+  const buttons = [
+    {
+      id: 'cancel',
+      type: ButtonTypes.SECONDARY,
+      label: 'Cancel',
+      disabled: loading,
+    },
+    {
+      id: 'import',
+      type: ButtonTypes.PRIMARY,
+      label: loading ? 'Importing...' : 'Import',
+      disabled: !file || loading,
+      loading: loading,
+    },
+  ];
+
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>{title}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 1 }}>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-
-          <Box
-            sx={{
-              border: `2px dashed ${dragActive ? '#1976d2' : '#ccc'}`,
-              borderRadius: 2,
-              p: 4,
-              textAlign: 'center',
-              backgroundColor: dragActive ? 'rgba(25, 118, 210, 0.05)' : 'transparent',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              mb: 2,
-            }}
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => document.getElementById('file-input').click()}
-          >
-            <input
-              id="file-input"
-              type="file"
-              accept=".json"
-              onChange={handleFileInput}
-              style={{ display: 'none' }}
+    <Modal
+      open={open}
+      header={title}
+      onClose={handleClose}
+      buttons={buttons}
+      onButtonClick={handleButtonClick}
+      className="import-modal"
+    >
+      <div style={{ padding: '0 4px' }}>
+        {error && (
+          <div style={{ marginBottom: '16px' }}>
+            <Banner
+              type={BannerTypes.ERROR}
+              size={BannerSizes.SMALL}
+              message={error}
+              closeable={false}
+              hideIcon={false}
             />
-            <UploadIcon sx={{ fontSize: 48, color: dragActive ? '#1976d2' : '#999', mb: 2 }} />
-            <Typography variant="body1" color="textSecondary">
-              {file ? file.name : 'Drag & drop a JSON file here, or click to select'}
-            </Typography>
-          </Box>
+          </div>
+        )}
 
-          {preview && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Preview:
-              </Typography>
-              <Box
-                sx={{
-                  backgroundColor: '#f5f5f5',
-                  borderRadius: 1,
-                  p: 2,
-                  maxHeight: 300,
-                  overflow: 'auto',
-                  fontFamily: 'monospace',
-                  fontSize: '0.85rem',
-                  whiteSpace: 'pre',
-                }}
-              >
-                {preview}
-              </Box>
-            </Box>
-          )}
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose} disabled={loading}>
-          Cancel
-        </Button>
-        <Button
-          onClick={handleImport}
-          variant="contained"
-          disabled={!file || loading}
-          startIcon={loading ? <CircularProgress size={20} /> : null}
-        >
-          {loading ? 'Importing...' : 'Import'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+        <div ref={fileUploadRef} onClick={!file ? handleUploadAreaClick : undefined} style={{ cursor: !file ? 'pointer' : 'default' }}>
+          <FileUpload
+            type={FileUploadTypes.DEFAULT}
+            accept={['application/json']}
+            multiple={false}
+            onFileDrop={handleFileDrop}
+            onFileDelete={handleFileDelete}
+            showUploadedSection={true}
+            persistUploadSection={false}
+            primaryMsg="Click to upload or drag and drop"
+            supportingMsg="JSON files only"
+            resetFiles={resetFiles}
+            autoUpload={false}
+          />
+        </div>
+
+        {preview && (
+          <div style={{ marginTop: '16px' }}>
+            <div style={{
+              fontSize: '14px',
+              fontWeight: 500,
+              color: '#344054',
+              marginBottom: '8px',
+            }}>
+              Preview:
+            </div>
+            <div
+              style={{
+                backgroundColor: '#f9fafb',
+                border: '1px solid #e4e7ec',
+                borderRadius: '8px',
+                padding: '12px',
+                maxHeight: '300px',
+                overflow: 'auto',
+                fontFamily: 'monospace',
+                fontSize: '13px',
+                whiteSpace: 'pre',
+                color: '#344054',
+              }}
+            >
+              {preview}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 };
 

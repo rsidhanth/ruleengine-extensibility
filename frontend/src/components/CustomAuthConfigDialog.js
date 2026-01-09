@@ -27,6 +27,7 @@ import {
   AccordionSummary,
   AccordionDetails,
 } from '@mui/material';
+import notification from '@leegality/leegality-react-component-library/dist/notification';
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
@@ -123,10 +124,10 @@ const CustomAuthConfigDialog = ({ open, onClose, credentialId, onSave }) => {
 
     try {
       const response = await customAuthConfigsApi.testApi(config.id);
-      // Handle test result - you could show a success message or result dialog
-      alert(`Test successful! Token extracted: ${response.data.token_extracted ? 'Yes' : 'No'}`);
+      // Handle test result
+      notification.success('Test successful!', `Token extracted: ${response.data.token_extracted ? 'Yes' : 'No'}`);
     } catch (err) {
-      alert(`Test failed: ${err.response?.data?.error || 'Unknown error'}`);
+      notification.error('Test failed', err.response?.data?.error || 'Unknown error');
     }
   };
 

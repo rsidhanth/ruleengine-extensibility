@@ -11,33 +11,45 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import {
   Box,
-  Button,
-  Typography,
   Paper,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   MenuItem,
   Select,
-  Chip,
   List,
   ListItem,
   ListItemText,
+  Typography,
+  IconButton,
+  Button as MuiButton,
 } from '@mui/material';
 import {
-  Close as CloseIcon,
-  Save as SaveIcon,
-  AccountTree as ApiIcon,
-  CallSplit as ConditionIcon,
+  Button as LeegalityButton,
+  ButtonTypes,
+  ButtonSizes,
+  Badge,
+  BadgeTypes,
+  BadgeSizes,
+} from '@leegality/leegality-react-component-library';
+import LeegalityIcon from '@leegality/leegality-react-component-library/dist/icon';
+import notification from '@leegality/leegality-react-component-library/dist/notification';
+import {
+  X as CloseIconFeather,
+  Save as SaveIconFeather,
+  GitBranch as ApiIcon,
+  GitMerge as ConditionIcon,
   Code as DslIcon,
-  MergeType as MergeIcon,
-  FlashOn as EventIcon,
-  Schedule as ScheduleIcon,
-  Edit as EditIcon,
+  GitPullRequest as MergeIcon,
+  Zap as EventIcon,
+  Layers as ParallelIcon,
+  Plus as PlusIcon,
+  Eye as EyeIcon,
+} from 'react-feather';
+import {
+  Close as CloseIcon,
   Delete as DeleteIcon,
-  AccountTree as ParallelIcon,
 } from '@mui/icons-material';
 import { eventsApi, sequencesApi } from '../services/api';
 import ConditionNode from './nodes/ConditionNode';
@@ -57,47 +69,51 @@ import DSLConfigDrawer from './DSLConfigDrawer';
 import VariableCreateModal from './VariableCreateModal';
 import VariableListModal from './VariableListModal';
 
+// Icon render helper for Leegality components
+const getRenderIcon = (IconComponent) =>
+  IconComponent ? ({ size, color }) => <LeegalityIcon icon={IconComponent} size={size} color={color} /> : null;
+
 const nodeTypes = [
   {
     type: 'action',
     label: 'Action',
     description: 'Execute a connector action',
-    icon: <ApiIcon fontSize="small" />,
+    icon: <ApiIcon size={16} />,
     color: '#8b5cf6'
   },
   {
     type: 'event',
     label: 'Event',
     description: 'Trigger events to start sequences',
-    icon: <EventIcon fontSize="small" />,
+    icon: <EventIcon size={16} />,
     color: '#ec4899'
   },
   {
     type: 'condition',
     label: 'Condition',
     description: 'Branch flow based on conditions',
-    icon: <ConditionIcon fontSize="small" />,
+    icon: <ConditionIcon size={16} />,
     color: '#10b981'
   },
   {
     type: 'custom_rule',
     label: 'Custom Rule',
     description: 'Run custom DSL script logic',
-    icon: <DslIcon fontSize="small" />,
+    icon: <DslIcon size={16} />,
     color: '#3b82f6'
   },
   {
     type: 'parallel',
     label: 'Parallel',
     description: 'Execute branches in parallel',
-    icon: <ParallelIcon fontSize="small" />,
+    icon: <ParallelIcon size={16} />,
     color: '#f59e0b'
   },
   {
     type: 'merge',
     label: 'Merge',
     description: 'Wait for parallel branches to complete',
-    icon: <MergeIcon fontSize="small" />,
+    icon: <MergeIcon size={16} />,
     color: '#06b6d4'
   },
 ];
@@ -189,13 +205,13 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
     // Add null check for nodeData
     if (!nodeData) {
       console.error('nodeData is undefined or null in handleNodeSettingsClick', { nodeId });
-      alert('Error: Node configuration data is missing. Please try refreshing the page.');
+      notification.error('Node configuration data is missing', 'Please try refreshing the page.');
       return;
     }
 
     if (!nodeData.nodeType) {
       console.error('nodeType is missing from nodeData', { nodeId, nodeData });
-      alert('Error: Node type is missing. Please try recreating this node.');
+      notification.error('Node type is missing', 'Please try recreating this node.');
       return;
     }
 
@@ -572,7 +588,7 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
       onSave(sequenceUpdateData);
     } catch (error) {
       console.error('Error saving sequence:', error);
-      alert('Failed to save sequence. Please try again.');
+      notification.error('Failed to save sequence', 'Please try again.');
     }
   };
 
@@ -596,124 +612,86 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
       backgroundColor: '#ffffff',
     }}>
       {/* Top Bar */}
-      <Box
-        sx={{
+      <div
+        style={{
           backgroundColor: '#ffffff',
           borderBottom: '1px solid #e5e7eb',
-          px: 3,
-          py: 2,
+          padding: '16px 24px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}
       >
-        <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '1rem' }}>
+        <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '16px', color: '#111827' }}>
               {sequenceData.name}
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#6b7280' }}>
-              Version {version}
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              variant="outlined"
-              startIcon={<SaveIcon />}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+              <Badge
+                type={BadgeTypes.GRAY}
+                size={BadgeSizes.SMALL}
+                label={`v${version}`}
+              />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <LeegalityButton
+              label="Save as Draft"
+              type={ButtonTypes.SECONDARY}
+              size={ButtonSizes.SMALL}
               onClick={() => handleSave('draft')}
-              sx={{
-                color: '#374151',
-                borderColor: '#d1d5db',
-                fontWeight: 500,
-                textTransform: 'none',
-                px: 3,
-                borderRadius: 1,
-                '&:hover': {
-                  borderColor: '#9ca3af',
-                  backgroundColor: '#f9fafb',
-                },
-              }}
-            >
-              Save as Draft
-            </Button>
-            <Button
-              variant="contained"
+              renderIcon={getRenderIcon(SaveIconFeather)}
+            />
+            <LeegalityButton
+              label="Publish"
+              type={ButtonTypes.PRIMARY}
+              size={ButtonSizes.SMALL}
               onClick={() => handleSave('publish')}
-              sx={{
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                fontWeight: 500,
-                textTransform: 'none',
-                px: 3,
-                borderRadius: 1,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: '#2563eb',
-                  boxShadow: 'none',
-                },
-              }}
-            >
-              Publish
-            </Button>
-          </Box>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <Button
-            variant="outlined"
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <LeegalityButton
+            label="Create Variable"
+            type={ButtonTypes.SECONDARY}
+            size={ButtonSizes.SMALL}
             onClick={() => {
               console.log('Create Variable clicked!', showVariableCreateModal);
               setShowVariableCreateModal(true);
             }}
-            sx={{
-              color: '#374151',
-              borderColor: '#d1d5db',
-              fontWeight: 500,
-              textTransform: 'none',
-              px: 2,
-              borderRadius: 1,
-              '&:hover': {
-                borderColor: '#9ca3af',
-                backgroundColor: '#f9fafb',
-              },
-            }}
-          >
-            Create Variable
-          </Button>
-          <Button
-            variant="contained"
+            renderIcon={getRenderIcon(PlusIcon)}
+          />
+          <LeegalityButton
+            label={`View Variables (${variables.length})`}
+            type={ButtonTypes.PRIMARY}
+            size={ButtonSizes.SMALL}
             onClick={() => {
               console.log('View Variables clicked!', showVariableListModal, variables);
               setShowVariableListModal(true);
             }}
-            sx={{
-              backgroundColor: '#9333ea',
-              color: 'white',
-              fontWeight: 500,
-              textTransform: 'none',
-              px: 2,
-              borderRadius: 1,
-              boxShadow: 'none',
-              '&:hover': {
-                backgroundColor: '#7e22ce',
-                boxShadow: 'none',
-              },
-            }}
-          >
-            View Variables ({variables.length})
-          </Button>
-          <IconButton
+            renderIcon={getRenderIcon(EyeIcon)}
+          />
+          <button
             onClick={onClose}
-            sx={{
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '8px',
+              cursor: 'pointer',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               color: '#6b7280',
-              '&:hover': {
-                backgroundColor: '#f3f4f6',
-              },
             }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
-            <CloseIcon />
-          </IconButton>
-        </Box>
-      </Box>
+            <CloseIconFeather size={20} />
+          </button>
+        </div>
+      </div>
 
       <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
         {/* Left Sidebar */}
@@ -908,9 +886,9 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
           </Paper>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowEventPayload(false)} sx={{ textTransform: 'none' }}>
+          <MuiButton onClick={() => setShowEventPayload(false)} sx={{ textTransform: 'none' }}>
             Close
-          </Button>
+          </MuiButton>
         </DialogActions>
       </Dialog>
 
@@ -977,9 +955,9 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
           </List>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowAllEventsModal(false)} sx={{ textTransform: 'none' }}>
+          <MuiButton onClick={() => setShowAllEventsModal(false)} sx={{ textTransform: 'none' }}>
             Close
-          </Button>
+          </MuiButton>
         </DialogActions>
       </Dialog>
 
@@ -1072,9 +1050,9 @@ const SequenceBuilder = ({ sequenceData, onSave, onClose }) => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowEventSelector(false)} sx={{ textTransform: 'none' }}>
+          <MuiButton onClick={() => setShowEventSelector(false)} sx={{ textTransform: 'none' }}>
             Done
-          </Button>
+          </MuiButton>
         </DialogActions>
       </Dialog>
 

@@ -3,31 +3,19 @@ import {
   ThemeProvider,
   createTheme,
   CssBaseline,
-  AppBar,
-  Toolbar,
-  Typography,
   Box,
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Divider,
-  Alert,
-  Snackbar,
 } from '@mui/material';
+import notification, { NotificationBase } from '@leegality/leegality-react-component-library/dist/notification';
 import {
-  Settings as ConnectorsIcon,
-  VpnKey as CredentialsIcon,
-  PlayArrow as ActionsIcon,
-  AccountTree as WorkflowsIcon,
-  Storage as ApiLogsIcon,
-  Event as EventsIcon,
-  Timeline as SequencesIcon,
-  History as ActivityLogsIcon,
-  ShowChart as ExecutionLogsIcon,
-} from '@mui/icons-material';
+  Calendar,
+  GitBranch,
+  Settings,
+  Key,
+  Activity,
+  BarChart2,
+  PlayCircle,
+} from 'react-feather';
+import Icon from '@leegality/leegality-react-component-library/dist/icon';
 import Connectors from './pages/Connectors';
 import Credentials from './pages/Credentials';
 import Actions from './pages/Actions';
@@ -51,7 +39,7 @@ const theme = createTheme({
   },
 });
 
-const drawerWidth = 240;
+const sidebarWidth = 240;
 
 function App() {
   const [currentView, setCurrentView] = useState('sequences');
@@ -59,7 +47,6 @@ function App() {
   const [selectedCredentialForSets, setSelectedCredentialForSets] = useState(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState(null);
   const [apiLogsOpen, setApiLogsOpen] = useState(false);
-  const [apiError, setApiError] = useState(null);
 
   useEffect(() => {
     // Test API connection on mount
@@ -69,13 +56,10 @@ function App() {
       } catch (error) {
         console.error('API Connection Error:', error);
         const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
-        setApiError(
-          `Cannot connect to backend at ${apiUrl}. ${
-            error.response
-              ? `Server returned ${error.response.status}`
-              : 'Please check if the backend is running and REACT_APP_API_URL is set correctly.'
-          }`
-        );
+        const errorMessage = error.response
+          ? `Server returned ${error.response.status}`
+          : 'Please check if the backend is running and REACT_APP_API_URL is set correctly.';
+        notification.error('Backend Connection Error', `Cannot connect to backend at ${apiUrl}. ${errorMessage}`);
       }
     };
     testConnection();
@@ -151,133 +135,187 @@ function App() {
   };
 
   const navigationItems = [
-    // { key: 'workflows', label: 'Workflows', icon: <WorkflowsIcon /> },  // Hidden
-    { key: 'events', label: 'Events', icon: <EventsIcon /> },
-    { key: 'sequences', label: 'Sequences', icon: <SequencesIcon /> },
-    { key: 'connectors', label: 'Connectors', icon: <ConnectorsIcon /> },
-    { key: 'credentials', label: 'Credentials', icon: <CredentialsIcon /> },
-    { key: 'activity-logs', label: 'Activity Logs', icon: <ActivityLogsIcon /> },
-    { key: 'execution-logs', label: 'Execution Logs', icon: <ExecutionLogsIcon /> },
-    // { key: 'api-logs', label: 'API Logs', icon: <ApiLogsIcon /> },  // Hidden
+    { key: 'events', label: 'Events', icon: Calendar },
+    { key: 'sequences', label: 'Sequences', icon: GitBranch },
+    { key: 'connectors', label: 'Connectors', icon: Settings },
+    { key: 'credentials', label: 'Credentials', icon: Key },
+    { key: 'activity-logs', label: 'Activity Logs', icon: Activity },
+    { key: 'execution-logs', label: 'Execution Logs', icon: BarChart2 },
   ];
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ display: 'flex' }}>
-        {/* App Bar */}
-        <AppBar
-          position="fixed"
+      <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+        {/* Sidebar */}
+        <Box
+          component="aside"
           sx={{
-            width: `calc(100% - ${drawerWidth}px)`,
-            ml: `${drawerWidth}px`,
+            width: sidebarWidth,
+            flexShrink: 0,
+            backgroundColor: '#fff',
+            borderRight: '1px solid #e4e7ec',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
-          <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          {/* Logo/Brand Header */}
+          <Box
+            sx={{
+              height: 64,
+              display: 'flex',
+              alignItems: 'center',
+              px: 2,
+              borderBottom: '1px solid #e4e7ec',
+            }}
+          >
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #7f56d9 0%, #9e77ed 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mr: 1.5,
+              }}
+            >
+              <GitBranch size={18} color="#fff" />
+            </Box>
+            <Box sx={{ fontSize: '14px', fontWeight: 600, color: '#101828' }}>
+              Rule Engine
+            </Box>
+          </Box>
+
+          {/* Navigation */}
+          <Box sx={{ flex: 1, py: 2 }}>
+            <Box sx={{ px: 2, mb: 1 }}>
+              <Box sx={{ fontSize: '12px', fontWeight: 500, color: '#667085', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Navigation
+              </Box>
+            </Box>
+            <Box component="nav">
+              {navigationItems.map((item) => {
+                const isSelected = currentView === item.key;
+                const IconComponent = item.icon;
+                return (
+                  <Box
+                    key={item.key}
+                    onClick={() => handleNavigationClick(item.key)}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      px: 2,
+                      py: 1.25,
+                      mx: 1,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? '#f9f5ff' : 'transparent',
+                      color: isSelected ? '#7f56d9' : '#344054',
+                      fontWeight: isSelected ? 500 : 400,
+                      fontSize: '14px',
+                      transition: 'all 0.15s ease',
+                      '&:hover': {
+                        backgroundColor: isSelected ? '#f9f5ff' : '#f9fafb',
+                      },
+                    }}
+                  >
+                    <Icon
+                      icon={IconComponent}
+                      size={20}
+                      color={isSelected ? '#7f56d9' : '#667085'}
+                    />
+                    <Box sx={{ ml: 1.5 }}>{item.label}</Box>
+                  </Box>
+                );
+              })}
+              {selectedConnector && (
+                <>
+                  <Box sx={{ borderTop: '1px solid #e4e7ec', mx: 2, my: 1.5 }} />
+                  <Box
+                    onClick={() => setCurrentView('actions')}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      px: 2,
+                      py: 1.25,
+                      mx: 1,
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      backgroundColor: currentView === 'actions' ? '#f9f5ff' : 'transparent',
+                      color: currentView === 'actions' ? '#7f56d9' : '#344054',
+                      fontWeight: currentView === 'actions' ? 500 : 400,
+                      fontSize: '14px',
+                      '&:hover': {
+                        backgroundColor: currentView === 'actions' ? '#f9f5ff' : '#f9fafb',
+                      },
+                    }}
+                  >
+                    <Icon
+                      icon={PlayCircle}
+                      size={20}
+                      color={currentView === 'actions' ? '#7f56d9' : '#667085'}
+                    />
+                    <Box sx={{ ml: 1.5 }}>
+                      <Box>Actions</Box>
+                      <Box sx={{ fontSize: '12px', color: '#667085', fontWeight: 400 }}>
+                        {selectedConnector.name}
+                      </Box>
+                    </Box>
+                  </Box>
+                </>
+              )}
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Main Content Area */}
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#fff' }}>
+          {/* Top Header Bar */}
+          <Box
+            component="header"
+            sx={{
+              height: 64,
+              backgroundColor: '#fff',
+              borderBottom: '1px solid #e4e7ec',
+              display: 'flex',
+              alignItems: 'center',
+              px: 3,
+            }}
+          >
+            <Box sx={{ fontSize: '18px', fontWeight: 600, color: '#101828' }}>
               Rule Engine Extensibility
               {selectedConnector && currentView === 'actions' && (
-                <Typography variant="subtitle1" component="span" sx={{ ml: 2, opacity: 0.8 }}>
+                <Box component="span" sx={{ ml: 2, color: '#667085', fontWeight: 400, fontSize: '14px' }}>
                   → {selectedConnector.name} Actions
-                </Typography>
+                </Box>
               )}
-            </Typography>
-          </Toolbar>
-        </AppBar>
+            </Box>
+          </Box>
 
-        {/* Sidebar */}
-        <Drawer
-          sx={{
-            width: drawerWidth,
-            flexShrink: 0,
-            '& .MuiDrawer-paper': {
-              width: drawerWidth,
-              boxSizing: 'border-box',
-            },
-          }}
-          variant="permanent"
-          anchor="left"
-        >
-          <Toolbar>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              Navigation
-            </Typography>
-          </Toolbar>
-          <Divider />
-          <List>
-            {navigationItems.map((item) => (
-              <ListItem key={item.key} disablePadding>
-                <ListItemButton
-                  selected={currentView === item.key}
-                  onClick={() => handleNavigationClick(item.key)}
-                >
-                  <ListItemIcon>
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText primary={item.label} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-            {selectedConnector && (
-              <>
-                <Divider sx={{ my: 1 }} />
-                <ListItem disablePadding>
-                  <ListItemButton
-                    selected={currentView === 'actions'}
-                    onClick={() => setCurrentView('actions')}
-                  >
-                    <ListItemIcon>
-                      <ActionsIcon />
-                    </ListItemIcon>
-                    <ListItemText 
-                      primary="Actions" 
-                      secondary={selectedConnector.name}
-                    />
-                  </ListItemButton>
-                </ListItem>
-              </>
-            )}
-          </List>
-        </Drawer>
-
-        {/* Main Content */}
-        <Box
-          component="main"
-          sx={{
-            flexGrow: 1,
-            bgcolor: 'background.default',
-            p: 3,
-            mt: 8, // Account for AppBar height
-          }}
-        >
-          {renderCurrentView()}
+          {/* Page Content */}
+          <Box
+            component="main"
+            sx={{
+              flex: 1,
+              px: 3,
+              py: 2,
+              overflow: 'auto',
+            }}
+          >
+            {renderCurrentView()}
+          </Box>
         </Box>
-        
+
         {/* API Call Log Viewer */}
         <ApiCallLogViewer
           open={apiLogsOpen}
           onClose={() => setApiLogsOpen(false)}
         />
 
-        {/* API Connection Error Snackbar */}
-        <Snackbar
-          open={!!apiError}
-          autoHideDuration={null}
-          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        >
-          <Alert
-            severity="error"
-            onClose={() => setApiError(null)}
-            sx={{ width: '100%', maxWidth: 600 }}
-          >
-            <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 1 }}>
-              Backend Connection Error
-            </Typography>
-            <Typography variant="body2">
-              {apiError}
-            </Typography>
-          </Alert>
-        </Snackbar>
+        {/* Notification Toast Container */}
+        <NotificationBase />
       </Box>
     </ThemeProvider>
   );

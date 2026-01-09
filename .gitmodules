@@ -1,0 +1,3 @@
+[submodule "leegality-react-component-library"]
+	path = leegality-react-component-library
+	url = https://github.com/rsidhanth/leegality-react-component-library.git

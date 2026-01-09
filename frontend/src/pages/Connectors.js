@@ -1,36 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Box, Container } from '@mui/material';
 import {
-  Container,
-  Typography,
   Button,
-  IconButton,
-  Chip,
-  Box,
-  Alert,
+  ButtonTypes,
+  ButtonSizes,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Switch,
-  FormControlLabel,
+  ColumnTypes,
+  Toggle,
+  ToggleSizes,
+  Badge,
+  BadgeTypes,
+  BadgeSizes,
+  Loading,
+  EmptyState,
   Tooltip,
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Settings as ActionsIcon,
-  FileDownload as ExportIcon,
-  FileUpload as ImportIcon,
-} from '@mui/icons-material';
+  PageHeader,
+} from '@leegality/leegality-react-component-library';
+import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
+import Icon from '@leegality/leegality-react-component-library/dist/icon';
+import { Edit2, Trash2, Download, Upload, Plus, Settings } from 'react-feather';
 import { connectorsApi } from '../services/api';
 import ConnectorForm from '../components/ConnectorForm';
 import ImportModal from '../components/ImportModal';
 import ConnectorConflictDialog from '../components/ConnectorConflictDialog';
 import CredentialSetForm from '../components/CredentialSetForm';
+
+// Icon render helper
+const getRenderIcon = (IconComponent) =>
+  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
 
 const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const [connectors, setConnectors] = useState([]);
@@ -96,8 +93,6 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
 
   const handleCredentialSetsClick = (connector) => {
     if (connector.credential && onNavigateToCredentialSets) {
-      // We need to pass the full credential object
-      // Since we only have the credential ID, we'll construct a minimal credential object
       const credential = {
         id: connector.credential,
         name: connector.credential_name
@@ -107,7 +102,6 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   };
 
   const handleAddCredentialSet = (connector) => {
-    // Construct the credential object needed by CredentialSetForm
     const credential = {
       id: connector.credential,
       name: connector.credential_name,
@@ -120,24 +114,28 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
   const handleCredentialSetSaved = () => {
     setSuccessMessage('Credential set created successfully');
     setTimeout(() => setSuccessMessage(''), 3000);
-    loadConnectors(); // Refresh to update credential sets count
+    loadConnectors();
   };
 
-  const handleToggleStatus = async (connector) => {
+  const handleToggleStatus = useCallback(async (connector) => {
     try {
       await connectorsApi.toggleStatus(connector.id);
-      setError(''); // Clear any previous errors
+      setError('');
       loadConnectors();
+      const newStatus = connector.status === 'active' ? 'inactive' : 'active';
+      setSuccessMessage(`Connector ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`);
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       console.error('Error toggling connector status:', err);
       const errorMessage = err.response?.data?.error || 'Failed to toggle connector status';
       setError(errorMessage);
     }
-  };
+  }, []);
 
-  const getConnectorTypeColor = (type) => {
-    return type === 'system' ? 'success' : 'default';
-  };
+  // Handle clicking on connector name - opens edit form
+  const handleConnectorNameClick = useCallback((connector) => {
+    handleEdit(connector);
+  }, []);
 
   const handleExport = async (connector) => {
     try {
@@ -238,202 +236,339 @@ const Connectors = ({ onNavigateToActions, onNavigateToCredentialSets }) => {
     }
   };
 
-  if (loading) return <Typography>Loading...</Typography>;
+  // Handle table actions
+  const handleAction = (rowId, actionId) => {
+    const connector = connectors.find(c => c.id === rowId);
+    if (!connector) return;
+
+    switch (actionId) {
+      case 'edit':
+        handleEdit(connector);
+        break;
+      case 'actions':
+        handleActionsClick(connector);
+        break;
+      case 'export':
+        handleExport(connector);
+        break;
+      case 'delete':
+        handleDelete(connector.id);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // PageHeader buttons configuration
+  const headerButtons = useMemo(() => [
+    {
+      id: 'import',
+      label: 'Import',
+      type: ButtonTypes.SECONDARY,
+      renderIcon: getRenderIcon(Upload),
+    },
+    {
+      id: 'create',
+      label: 'Add Connector',
+      type: ButtonTypes.PRIMARY,
+      renderIcon: getRenderIcon(Plus),
+    },
+  ], []);
+
+  // Handle header button clicks
+  const handleHeaderButtonClick = (buttonId) => {
+    switch (buttonId) {
+      case 'import':
+        setImportModalOpen(true);
+        break;
+      case 'create':
+        handleCreate();
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Table action items - first 2 visible, rest in kebab menu
+  const actionItems = useMemo(() => [
+    { id: 'edit', label: 'Edit', renderIcon: getRenderIcon(Edit2), tooltipProps: { description: 'Edit connector' } },
+    { id: 'actions', label: 'Manage Actions', renderIcon: getRenderIcon(Settings), tooltipProps: { description: 'Manage connector actions' } },
+    { id: 'export', label: 'Export', renderIcon: getRenderIcon(Download), tooltipProps: { description: 'Export connector' } },
+    { id: 'delete', label: 'Delete', renderIcon: getRenderIcon(Trash2), tooltipProps: { description: 'Delete connector' } },
+  ], []);
+
+  // Table columns
+  const columns = useMemo(() => [
+    {
+      id: 'name',
+      label: 'Name',
+      accessor: '_nameDisplay',
+      type: ColumnTypes.CUSTOM,
+      sortable: true,
+      width: 250,
+    },
+    {
+      id: 'connector_type',
+      label: 'Type',
+      accessor: '_typeDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 100,
+    },
+    {
+      id: 'status',
+      label: 'Status',
+      accessor: '_statusToggle',
+      type: ColumnTypes.CUSTOM,
+      width: 150,
+    },
+    {
+      id: 'base_url',
+      label: 'Base URL',
+      accessor: '_baseUrlDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 200,
+    },
+    {
+      id: 'actions_count',
+      label: 'Actions',
+      accessor: '_actionsCountBadge',
+      type: ColumnTypes.BADGE,
+      width: 100,
+    },
+    {
+      id: 'credential_sets',
+      label: 'Credential Sets',
+      accessor: '_credentialSetsDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 180,
+    },
+  ], []);
+
+  // Transform data for table
+  const tableData = useMemo(() => {
+    return connectors.map(connector => ({
+      id: connector.id.toString(),
+      ...connector,
+      // Name column with description - clickable purple text
+      _nameDisplay: (
+        <div>
+          <div
+            style={{
+              fontWeight: 500,
+              color: '#7f56d9', // primary-600 purple
+              cursor: 'pointer',
+            }}
+            onClick={() => handleConnectorNameClick(connector)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleConnectorNameClick(connector)}
+          >
+            {connector.name}
+          </div>
+          {connector.description && (
+            <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '4px' }}>
+              {connector.description}
+            </div>
+          )}
+        </div>
+      ),
+      // Type display (plain text)
+      _typeDisplay: (
+        <span style={{ fontSize: '14px', color: '#344054' }}>
+          {connector.connector_type === 'system' ? 'System' : 'Custom'}
+        </span>
+      ),
+      // Status with toggle + badge
+      _statusToggle: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Toggle
+            checked={connector.status === 'active'}
+            onChange={() => handleToggleStatus(connector)}
+            size={ToggleSizes.SMALL}
+          />
+          <Badge
+            label={connector.status === 'active' ? 'Active' : 'Inactive'}
+            type={connector.status === 'active' ? BadgeTypes.SUCCESS : BadgeTypes.GRAY}
+            size={BadgeSizes.SMALL}
+          />
+        </div>
+      ),
+      // Base URL display
+      _baseUrlDisplay: (
+        <span style={{
+          fontFamily: 'monospace',
+          fontSize: '0.75rem',
+          backgroundColor: '#f5f5f5',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          maxWidth: '200px',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          display: 'inline-block',
+        }}>
+          {connector.base_url}
+        </span>
+      ),
+      // Credential sets display
+      _credentialSetsDisplay: !connector.credential_name ? (
+        <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>No credential</span>
+      ) : (
+        <div>
+          <div style={{ display: 'inline-block', width: '90px' }} className="credential-set-btn">
+            {connector.credential_sets_count > 0 ? (
+              <Tooltip description="Click to view and manage credential sets">
+                <Button
+                  type={ButtonTypes.SECONDARY}
+                  size={ButtonSizes.SMALL}
+                  label={`${connector.credential_sets_count} set${connector.credential_sets_count !== 1 ? 's' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCredentialSetsClick(connector);
+                  }}
+                />
+              </Tooltip>
+            ) : (
+              <Tooltip description="Add credentials to enable this connector">
+                <Button
+                  type={ButtonTypes.SECONDARY}
+                  size={ButtonSizes.SMALL}
+                  label="+ Add Set"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAddCredentialSet(connector);
+                  }}
+                />
+              </Tooltip>
+            )}
+          </div>
+        </div>
+      ),
+      // Actions count badge
+      _actionsCountBadge: {
+        label: `${connector.actions?.length || 0} actions`,
+        type: BadgeTypes.PRIMARY,
+        size: BadgeSizes.SMALL,
+      },
+    }));
+  }, [connectors, handleConnectorNameClick, handleToggleStatus]);
+
+  // Empty state props
+  const emptyStateProps = useMemo(() => ({
+    header: 'No connectors found',
+    description: 'Create your first connector to get started',
+    primaryButton: {
+      label: 'Add Connector',
+      onClick: handleCreate,
+      renderIcon: getRenderIcon(Plus),
+    },
+  }), []);
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <Loading loaderMsgProps={{ loaderMsg: 'Loading connectors...' }} />
+      </Box>
+    );
+  }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1">
-          Connectors
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<ImportIcon />}
-            onClick={() => setImportModalOpen(true)}
-          >
-            Import
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-          >
-            Add Connector
-          </Button>
-        </Box>
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      {/* Page Header */}
+      <Box sx={{ mb: 3 }}>
+        <PageHeader
+          text="Connectors"
+          supportingText="Manage API connectors and integrations"
+          buttons={headerButtons}
+          onButtonClick={handleHeaderButtonClick}
+        />
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {successMessage && <Alert severity="success" sx={{ mb: 2 }}>{successMessage}</Alert>}
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Type</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Base URL</TableCell>
-              <TableCell>Credential Sets</TableCell>
-              <TableCell align="center">Actions</TableCell>
-              <TableCell align="center">Operations</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {connectors.map((connector) => (
-              <TableRow key={connector.id} hover>
-                <TableCell>
-                  <Typography variant="subtitle1" fontWeight="medium">
-                    {connector.name}
-                  </Typography>
-                  {connector.description && (
-                    <Typography variant="body2" color="textSecondary">
-                      {connector.description}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Chip
-                    label={connector.connector_type === 'system' ? 'System' : 'Custom'}
-                    size="small"
-                    color={getConnectorTypeColor(connector.connector_type)}
-                    variant="filled"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Tooltip title="Toggle Active/Inactive (cascades to actions)">
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={connector.status === 'active'}
-                          onChange={() => handleToggleStatus(connector)}
-                          color="success"
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {connector.status === 'active' ? 'Active' : 'Inactive'}
-                        </Typography>
-                      }
-                    />
-                  </Tooltip>
-                </TableCell>
-                <TableCell>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {connector.base_url}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  {connector.credential_name ? (
-                    <Box>
-                      {connector.credential_sets_count > 0 ? (
-                        <Tooltip title="Click to view and manage credential sets">
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="primary"
-                            onClick={() => handleCredentialSetsClick(connector)}
-                            sx={{ textTransform: 'none' }}
-                          >
-                            {`${connector.credential_sets_count} set${connector.credential_sets_count !== 1 ? 's' : ''}`}
-                          </Button>
-                        </Tooltip>
-                      ) : (
-                        <Tooltip title="Add credentials to enable this connector">
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            color="warning"
-                            onClick={() => handleAddCredentialSet(connector)}
-                            sx={{
-                              textTransform: 'none',
-                              fontSize: '0.75rem',
-                              py: 0.25,
-                              px: 1,
-                            }}
-                          >
-                            + Add Set
-                          </Button>
-                        </Tooltip>
-                      )}
-                      <Typography variant="caption" color="textSecondary" display="block">
-                        Profile: {connector.credential_name}
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <Typography variant="body2" color="textSecondary">
-                      No credential
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell align="center">
-                  <Chip
-                    label={`${connector.actions?.length || 0} actions`}
-                    size="small"
-                    variant="outlined"
-                  />
-                </TableCell>
-                <TableCell align="center">
-                  <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
-                    <Tooltip title="Export">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleExport(connector)}
-                        color="info"
-                      >
-                        <ExportIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Edit">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEdit(connector)}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Manage Actions">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleActionsClick(connector)}
-                        color="primary"
-                      >
-                        <ActionsIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDelete(connector.id)}
-                        color="error"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      {connectors.length === 0 && !loading && (
-        <Box sx={{ textAlign: 'center', mt: 4 }}>
-          <Typography variant="h6" color="textSecondary">
-            No connectors found
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Create your first connector to get started
-          </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreate}>
-            Add Connector
-          </Button>
+      {/* Error Banner */}
+      {error && (
+        <Box sx={{ mb: 2 }}>
+          <Banner
+            type={BannerTypes.ERROR}
+            size={BannerSizes.SMALL}
+            message={error}
+            onClose={() => setError('')}
+          />
         </Box>
       )}
 
+      {/* Success Banner */}
+      {successMessage && (
+        <Box sx={{ mb: 2 }}>
+          <Banner
+            type={BannerTypes.SUCCESS}
+            size={BannerSizes.SMALL}
+            message={successMessage}
+            onClose={() => setSuccessMessage('')}
+          />
+        </Box>
+      )}
+
+      {/* Connectors Table */}
+      <Box sx={{
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        border: '1px solid #e5e7eb',
+        overflow: 'hidden',
+        // Fix column gap and action column width issues
+        '& .tbl-cont': {
+          borderTop: 'none',
+          '& table': {
+            borderCollapse: 'collapse',
+            borderSpacing: 0,
+          },
+          '& .tbl-th, & .tbl-td': {
+            borderRight: 'none',
+          },
+          // Fix action column width to prevent layout shift on hover
+          '& .tbl-row-action-items-cont': {
+            minWidth: '130px',
+            width: '130px',
+            '& .trai-wrapper': {
+              '& .tbl-row-action-item:not(.kebab)': {
+                // Always display but invisible until hover (prevents layout shift)
+                display: 'flex !important',
+                opacity: 0,
+                pointerEvents: 'none',
+              },
+            },
+          },
+          // On row hover, make action items visible and clickable
+          '& table tr:hover .tbl-row-action-items-cont .trai-wrapper .tbl-row-action-item:not(.kebab)': {
+            opacity: 1,
+            pointerEvents: 'auto',
+          },
+        },
+      }}>
+        {connectors.length === 0 ? (
+          <EmptyState
+            header="No connectors found"
+            description="Create your first connector to get started"
+            primaryButton={{
+              label: 'Add Connector',
+              onClick: handleCreate,
+              renderIcon: getRenderIcon(Plus),
+            }}
+          />
+        ) : (
+          <Table
+            columns={columns}
+            data={tableData}
+            actionItems={actionItems}
+            maxActions={2}
+            onAction={handleAction}
+            selectable={false}
+            showPagination={false}
+            emptyStateProps={emptyStateProps}
+          />
+        )}
+      </Box>
+
+      {/* Modals and Dialogs */}
       <ConnectorForm
         open={formOpen}
         onClose={() => setFormOpen(false)}

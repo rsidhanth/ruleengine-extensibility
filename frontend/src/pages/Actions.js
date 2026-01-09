@@ -1,35 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Box, Container } from '@mui/material';
 import {
-  Container,
-  Typography,
   Button,
+  ButtonTypes,
+  ButtonSizes,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  IconButton,
-  Chip,
-  Box,
-  Alert,
-  Breadcrumbs,
-  Link,
-  Switch,
-  FormControlLabel,
+  ColumnTypes,
+  RowOverrides,
+  Toggle,
+  ToggleSizes,
+  Badge,
+  BadgeTypes,
+  BadgeSizes,
+  Loading,
+  EmptyState,
   Tooltip,
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  PlayArrow as TestIcon,
-  ArrowBack as BackIcon,
-} from '@mui/icons-material';
+  PageHeader,
+} from '@leegality/leegality-react-component-library';
+import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
+import Icon from '@leegality/leegality-react-component-library/dist/icon';
+import { Edit2, Trash2, Play, Plus, ArrowLeft } from 'react-feather';
 import { actionsApi } from '../services/api';
 import EnhancedActionForm from '../components/EnhancedActionForm';
 import TestConnection from '../components/TestConnection';
+
+// Icon render helper
+const getRenderIcon = (IconComponent) =>
+  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
+
+// HTTP method badge types
+const getMethodBadgeType = (method) => {
+  switch (method) {
+    case 'GET': return BadgeTypes.SUCCESS;
+    case 'POST': return BadgeTypes.PRIMARY;
+    case 'PUT': return BadgeTypes.WARNING;
+    case 'PATCH': return BadgeTypes.INFO;
+    case 'DELETE': return BadgeTypes.ERROR;
+    default: return BadgeTypes.DEFAULT;
+  }
+};
 
 const Actions = ({ connector, onBack }) => {
   const [actions, setActions] = useState([]);
@@ -47,11 +56,7 @@ const Actions = ({ connector, onBack }) => {
 
   const loadActions = async () => {
     try {
-      console.log('Loading actions for connector:', connector);
-      console.log('Connector ID:', connector.id);
       const response = await actionsApi.getAll(connector.id);
-      console.log('Actions response:', response.data);
-      console.log('Number of actions:', response.data.length);
       setActions(response.data);
     } catch (err) {
       console.error('Failed to load actions:', err);
@@ -96,7 +101,7 @@ const Actions = ({ connector, onBack }) => {
     setTestOpen(true);
   };
 
-  const handleToggleStatus = async (action) => {
+  const handleToggleStatus = useCallback(async (action) => {
     try {
       await actionsApi.toggleStatus(action.id);
       loadActions();
@@ -104,22 +109,12 @@ const Actions = ({ connector, onBack }) => {
       console.error('Error toggling action status:', err);
       setError('Failed to toggle action status');
     }
-  };
+  }, []);
 
-  const getMethodColor = (method) => {
-    switch (method) {
-      case 'GET': return 'success';
-      case 'POST': return 'primary';
-      case 'PUT': return 'warning';
-      case 'PATCH': return 'info';
-      case 'DELETE': return 'error';
-      default: return 'default';
-    }
-  };
-
-  const getOriginTypeColor = (type) => {
-    return type === 'system' ? 'success' : 'default';
-  };
+  // Handle clicking on action name - opens edit form
+  const handleActionNameClick = useCallback((action) => {
+    handleEdit(action);
+  }, []);
 
   const getParametersSummary = (action) => {
     const parts = [];
@@ -127,168 +122,310 @@ const Actions = ({ connector, onBack }) => {
     const pathCount = Object.keys(action.path_params_config || {}).length;
     const bodyCount = Object.keys(action.request_body_params || {}).length;
 
-    if (queryCount > 0) parts.push(`${queryCount} query param${queryCount > 1 ? 's' : ''}`);
-    if (pathCount > 0) parts.push(`${pathCount} path param${pathCount > 1 ? 's' : ''}`);
-    if (bodyCount > 0) parts.push(`${bodyCount} body param${bodyCount > 1 ? 's' : ''}`);
+    if (queryCount > 0) parts.push(`${queryCount} query`);
+    if (pathCount > 0) parts.push(`${pathCount} path`);
+    if (bodyCount > 0) parts.push(`${bodyCount} body`);
 
-    return parts.length > 0 ? parts.join(', ') : 'No parameters';
+    return parts.length > 0 ? parts.join(', ') : 'None';
   };
 
-  if (loading) return <Typography>Loading...</Typography>;
+  // Handle table actions
+  const handleAction = useCallback((rowId, actionId) => {
+    const action = actions.find(a => a.id.toString() === rowId.toString());
+    if (!action) return;
+
+    switch (actionId) {
+      case 'edit':
+        handleEdit(action);
+        break;
+      case 'test':
+        handleTest(action);
+        break;
+      case 'delete':
+        handleDelete(action.id);
+        break;
+      default:
+        break;
+    }
+  }, [actions]);
+
+  // Table action items - first 2 visible, rest in kebab menu
+  const actionItems = useMemo(() => [
+    { id: 'edit', label: 'Edit', renderIcon: getRenderIcon(Edit2), tooltipProps: { description: 'Edit action' } },
+    { id: 'test', label: 'Test', renderIcon: getRenderIcon(Play), tooltipProps: { description: 'Test action' } },
+    { id: 'delete', label: 'Delete', renderIcon: getRenderIcon(Trash2), tooltipProps: { description: 'Delete action' } },
+  ], []);
+
+  // Table columns configuration
+  const columns = useMemo(() => [
+    {
+      id: 'name',
+      label: 'Action Name',
+      accessor: '_nameDisplay',
+      type: ColumnTypes.CUSTOM,
+      sortable: true,
+      width: 200,
+    },
+    {
+      id: 'origin_type',
+      label: 'Type',
+      accessor: '_typeDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 100,
+    },
+    {
+      id: 'http_method',
+      label: 'Method',
+      accessor: '_methodBadge',
+      type: ColumnTypes.BADGE,
+      width: 100,
+    },
+    {
+      id: 'status',
+      label: 'Status',
+      accessor: '_statusDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 150,
+    },
+    {
+      id: 'endpoint_path',
+      label: 'Endpoint',
+      accessor: '_endpointDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 200,
+    },
+    {
+      id: 'parameters',
+      label: 'Parameters',
+      accessor: '_parametersDisplay',
+      type: ColumnTypes.CUSTOM,
+      width: 150,
+    },
+  ], []);
+
+  // Transform data for table
+  const tableData = useMemo(() => {
+    const isConnectorInactive = connector?.status === 'inactive';
+
+    return actions.map(action => ({
+      id: action.id.toString(),
+      ...action,
+      // Name column - clickable purple text
+      _nameDisplay: (
+        <div>
+          <div
+            style={{
+              fontWeight: 500,
+              color: '#7f56d9', // primary-600 purple
+              cursor: 'pointer',
+            }}
+            onClick={() => handleActionNameClick(action)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleActionNameClick(action)}
+          >
+            {action.name}
+          </div>
+          {action.description && (
+            <div style={{ fontSize: '0.875rem', color: '#6b7280', marginTop: '4px' }}>
+              {action.description}
+            </div>
+          )}
+        </div>
+      ),
+      // Type display (plain text)
+      _typeDisplay: (
+        <span style={{ fontSize: '14px', color: '#344054' }}>
+          {action.origin_type === 'system' ? 'System' : 'Custom'}
+        </span>
+      ),
+      // HTTP Method badge
+      _methodBadge: {
+        label: action.http_method,
+        type: getMethodBadgeType(action.http_method),
+        size: BadgeSizes.SMALL,
+      },
+      // Status with Toggle + Badge
+      _statusDisplay: (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Tooltip description={isConnectorInactive ? 'Connector is inactive' : 'Toggle status'}>
+            <Toggle
+              checked={action.status === 'active'}
+              onChange={() => handleToggleStatus(action)}
+              size={ToggleSizes.SMALL}
+              disabled={isConnectorInactive}
+            />
+          </Tooltip>
+          <Badge
+            label={action.status === 'active' ? 'Active' : 'Inactive'}
+            type={action.status === 'active' ? BadgeTypes.SUCCESS : BadgeTypes.GRAY}
+            size={BadgeSizes.SMALL}
+          />
+        </div>
+      ),
+      // Endpoint display
+      _endpointDisplay: (
+        <span style={{
+          fontFamily: 'monospace',
+          fontSize: '0.75rem',
+          backgroundColor: '#f5f5f5',
+          padding: '4px 8px',
+          borderRadius: '4px',
+        }}>
+          {action.endpoint_path || '/'}
+        </span>
+      ),
+      // Parameters summary
+      _parametersDisplay: (
+        <span style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+          {getParametersSummary(action)}
+        </span>
+      ),
+      // Disable test action if connector is inactive
+      [RowOverrides.DISABLED_ACTIONS]: isConnectorInactive ? ['test'] : [],
+    }));
+  }, [actions, connector, handleActionNameClick, handleToggleStatus]);
+
+  // PageHeader buttons configuration
+  const headerButtons = useMemo(() => [
+    {
+      id: 'create',
+      label: 'Add Action',
+      type: ButtonTypes.PRIMARY,
+      renderIcon: getRenderIcon(Plus),
+    },
+  ], []);
+
+  // Handle header button clicks
+  const handleHeaderButtonClick = (buttonId) => {
+    if (buttonId === 'create') {
+      handleCreate();
+    }
+  };
+
+  // Empty state props
+  const emptyStateProps = useMemo(() => ({
+    text: 'No actions found',
+    supportingText: 'Create your first action for this connector',
+  }), []);
+
+  if (loading) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <Loading loaderMsgProps={{ loaderMsg: 'Loading actions...' }} />
+      </Box>
+    );
+  }
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Breadcrumbs sx={{ mb: 2 }}>
-        <Link
-          component="button"
-          variant="body1"
+      {/* Breadcrumb Navigation */}
+      <Box sx={{ mb: 2 }}>
+        <button
           onClick={onBack}
-          sx={{ display: 'flex', alignItems: 'center' }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            background: 'none',
+            border: 'none',
+            color: '#7f56d9',
+            cursor: 'pointer',
+            padding: '4px 0',
+            fontSize: '14px',
+            fontWeight: 500,
+          }}
         >
-          <BackIcon sx={{ mr: 0.5 }} fontSize="small" />
-          Connectors
-        </Link>
-        <Typography color="text.primary">{connector?.name} - Actions</Typography>
-      </Breadcrumbs>
-
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1">
-          Actions for {connector?.name}
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleCreate}
-        >
-          Add Action
-        </Button>
+          <ArrowLeft size={16} />
+          Back to Connectors
+        </button>
+        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+          {connector?.name} › Actions
+        </div>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {/* Page Header */}
+      <Box sx={{ mb: 3 }}>
+        <PageHeader
+          text={`Actions for ${connector?.name}`}
+          supportingText="Manage API actions and endpoints for this connector"
+          buttons={headerButtons}
+          onButtonClick={handleHeaderButtonClick}
+        />
+      </Box>
 
-      {actions.length === 0 && !loading ? (
-        <Box sx={{ textAlign: 'center', mt: 4 }}>
-          <Typography variant="h6" color="textSecondary">
-            No actions found
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Create your first action for this connector
-          </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreate}>
-            Add Action
-          </Button>
+      {/* Error Banner */}
+      {error && (
+        <Box sx={{ mb: 2 }}>
+          <Banner
+            type={BannerTypes.ERROR}
+            size={BannerSizes.SMALL}
+            message={error}
+            onClose={() => setError('')}
+          />
         </Box>
-      ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell><strong>Action Name</strong></TableCell>
-                <TableCell><strong>Type</strong></TableCell>
-                <TableCell><strong>Method</strong></TableCell>
-                <TableCell><strong>Status</strong></TableCell>
-                <TableCell><strong>Endpoint Path</strong></TableCell>
-                <TableCell><strong>Description</strong></TableCell>
-                <TableCell><strong>Parameters</strong></TableCell>
-                <TableCell align="right"><strong>Actions</strong></TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {actions.map((action) => (
-                <TableRow key={action.id} hover>
-                  <TableCell>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                      {action.name}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={action.origin_type === 'system' ? 'System' : 'Custom'}
-                      size="small"
-                      color={getOriginTypeColor(action.origin_type)}
-                      variant="filled"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={action.http_method}
-                      size="small"
-                      color={getMethodColor(action.http_method)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Tooltip title={connector?.status === 'inactive' ? 'Connector is inactive' : 'Toggle Active/Inactive'}>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={action.status === 'active'}
-                            onChange={() => handleToggleStatus(action)}
-                            color="success"
-                            size="small"
-                            disabled={connector?.status === 'inactive'}
-                          />
-                        }
-                        label={
-                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                            {action.status === 'active' ? 'Active' : 'Inactive'}
-                          </Typography>
-                        }
-                      />
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontFamily: 'monospace',
-                        fontSize: '0.875rem',
-                      }}
-                    >
-                      {action.endpoint_path || '/'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary">
-                      {action.description || 'No description'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.875rem' }}>
-                      {getParametersSummary(action)}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleEdit(action)}
-                      title="Edit"
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleTest(action)}
-                      title="Test Action"
-                      color="primary"
-                    >
-                      <TestIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(action.id)}
-                      title="Delete"
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
       )}
 
+      {/* Actions Table */}
+      <Box sx={{
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        border: '1px solid #e5e7eb',
+        overflow: 'hidden',
+        // Fix column gap and action column width issues
+        '& .tbl-cont': {
+          borderTop: 'none',
+          '& table': {
+            borderCollapse: 'collapse',
+            borderSpacing: 0,
+          },
+          '& .tbl-th, & .tbl-td': {
+            borderRight: 'none',
+          },
+          // Fix action column width to prevent layout shift on hover
+          '& .tbl-row-action-items-cont': {
+            minWidth: '130px',
+            width: '130px',
+            '& .trai-wrapper': {
+              '& .tbl-row-action-item:not(.kebab)': {
+                display: 'flex !important',
+                opacity: 0,
+                pointerEvents: 'none',
+              },
+            },
+          },
+          // On row hover, make action items visible and clickable
+          '& table tr:hover .tbl-row-action-items-cont .trai-wrapper .tbl-row-action-item:not(.kebab)': {
+            opacity: 1,
+            pointerEvents: 'auto',
+          },
+        },
+      }}>
+        {actions.length === 0 ? (
+          <EmptyState
+            header="No actions found"
+            description="Create your first action for this connector"
+            primaryButton={{
+              label: 'Add Action',
+              onClick: handleCreate,
+              renderIcon: getRenderIcon(Plus),
+            }}
+          />
+        ) : (
+          <Table
+            columns={columns}
+            data={tableData}
+            actionItems={actionItems}
+            maxActions={2}
+            onAction={handleAction}
+            selectable={false}
+            showPagination={false}
+            emptyStateProps={emptyStateProps}
+          />
+        )}
+      </Box>
+
+      {/* Modals */}
       <EnhancedActionForm
         open={formOpen}
         onClose={() => setFormOpen(false)}

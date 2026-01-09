@@ -1,24 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  TextField,
-  Alert,
-  MenuItem,
-  FormControlLabel,
-  Switch,
-  Radio,
-  RadioGroup,
-  FormControl,
-  FormLabel,
-  Typography,
-  Box,
+  Modal,
+  ModalTypes,
+  Input,
+  InputTypes,
   Checkbox,
-  Paper,
-} from '@mui/material';
+  CheckboxTypes,
+  CheckboxSizes,
+  Toggle,
+  ToggleSizes,
+  ButtonTypes,
+  DropdownMultiSelect,
+  DropdownSingleSelect,
+  Loading,
+} from '@leegality/leegality-react-component-library';
+import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
 import { eventsApi } from '../services/api';
 
 const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, template = null }) => {
@@ -34,8 +30,22 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
   const [error, setError] = useState('');
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
-  const [eventVersions, setEventVersions] = useState([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
+  const modalId = useMemo(() => 'sequence-form-modal', []);
+
+  // Event items state for multi-select dropdown
+  const [eventItems, setEventItems] = useState([]);
+
+  // Version items for single select dropdown
+  const [versionItems, setVersionItems] = useState([
+    { id: 'latest', label: 'Latest Version (Auto)', selected: true, helper: 'Always uses the most recent version' },
+  ]);
+
+  // Sequence type items for single select dropdown
+  const [sequenceTypeItems, setSequenceTypeItems] = useState([
+    { id: 'system', label: 'System Sequence', selected: false },
+    { id: 'custom', label: 'Custom Sequence', selected: true },
+  ]);
 
   useEffect(() => {
     if (open) {
@@ -48,6 +58,14 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
     try {
       const response = await eventsApi.getAll();
       setEvents(response.data);
+      // Initialize event items with selected: false
+      const initialEventItems = response.data.map((event) => ({
+        id: event.id,
+        label: event.name,
+        selected: false,
+        helper: `${event.event_type === 'system' ? 'System' : 'Custom'} • v${event.version || 1}`,
+      }));
+      setEventItems(initialEventItems);
     } catch (err) {
       console.error('Error loading events:', err);
       setError('Failed to load events');
@@ -59,17 +77,24 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
   const loadEventVersions = async (eventId) => {
     setLoadingVersions(true);
     try {
-      // For now, we'll create mock versions. In production, this would be an API call
-      // const response = await eventsApi.getVersions(eventId);
-      // setEventVersions(response.data);
-
       // Mock data for demonstration
       const mockVersions = [
         { version: '1.0', created_at: '2024-01-01' },
         { version: '1.1', created_at: '2024-02-01' },
         { version: '2.0', created_at: '2024-03-01' },
       ];
-      setEventVersions(mockVersions);
+
+      // Update version items
+      const newVersionItems = [
+        { id: 'latest', label: 'Latest Version (Auto)', selected: formData.trigger_event_version === 'latest', helper: 'Always uses the most recent version' },
+        ...mockVersions.map((v) => ({
+          id: v.version,
+          label: `Version ${v.version}`,
+          selected: formData.trigger_event_version === v.version,
+          helper: `Created: ${v.created_at}`,
+        })),
+      ];
+      setVersionItems(newVersionItems);
     } catch (err) {
       console.error('Error loading event versions:', err);
     } finally {
@@ -79,17 +104,32 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
 
   useEffect(() => {
     if (sequence) {
+      const triggerEvents = Array.isArray(sequence.trigger_events)
+        ? sequence.trigger_events
+        : (sequence.trigger_events ? [sequence.trigger_events] : []);
+
       setFormData({
         name: sequence.name || '',
         description: sequence.description || '',
         sequence_type: sequence.sequence_type || 'custom',
         status: sequence.status || 'active',
         trigger_type: sequence.trigger_type || 'event',
-        trigger_events: Array.isArray(sequence.trigger_events) ? sequence.trigger_events : (sequence.trigger_events ? [sequence.trigger_events] : []),
+        trigger_events: triggerEvents,
         trigger_event_version: sequence.trigger_event_version || 'latest',
       });
+
+      // Update event items to reflect selected events
+      setEventItems(prev => prev.map(item => ({
+        ...item,
+        selected: triggerEvents.includes(item.id)
+      })));
+
+      // Update sequence type items
+      setSequenceTypeItems(prev => prev.map(item => ({
+        ...item,
+        selected: item.id === (sequence.sequence_type || 'custom')
+      })));
     } else if (template) {
-      // Pre-populate with template data
       setFormData({
         name: template.name,
         description: template.description,
@@ -99,6 +139,12 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
         trigger_events: [],
         trigger_event_version: 'latest',
       });
+      // Reset event items
+      setEventItems(prev => prev.map(item => ({ ...item, selected: false })));
+      setSequenceTypeItems(prev => prev.map(item => ({
+        ...item,
+        selected: item.id === 'custom'
+      })));
     } else {
       setFormData({
         name: '',
@@ -109,36 +155,80 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
         trigger_events: [],
         trigger_event_version: 'latest',
       });
+      // Reset event items
+      setEventItems(prev => prev.map(item => ({ ...item, selected: false })));
+      setSequenceTypeItems(prev => prev.map(item => ({
+        ...item,
+        selected: item.id === 'custom'
+      })));
     }
     setError('');
   }, [sequence, template, open]);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value,
-    });
+  const handleNameChange = (e) => {
+    setFormData({ ...formData, name: e.target.value });
+  };
 
-    // Load event versions when events are selected
-    if (name === 'trigger_events' && Array.isArray(value) && value.length > 0) {
-      loadEventVersions(value[0]); // Load versions for the first selected event
-      setFormData(prev => ({ ...prev, trigger_event_version: 'latest' }));
+  const handleDescriptionChange = (e) => {
+    setFormData({ ...formData, description: e.target.value });
+  };
+
+  const handleTriggerTypeChange = (type) => {
+    setFormData({ ...formData, trigger_type: type });
+  };
+
+  const handleEventSelect = (eventId) => {
+    // onSelect callback receives the item ID directly
+    const isCurrentlySelected = eventItems.find(item => item.id === eventId)?.selected;
+
+    // Update event items - toggle the selected state
+    setEventItems(prev => prev.map(item => ({
+      ...item,
+      selected: item.id === eventId ? !item.selected : item.selected
+    })));
+
+    // Update form data
+    const newSelectedEvents = isCurrentlySelected
+      ? formData.trigger_events.filter(id => id !== eventId)
+      : [...formData.trigger_events, eventId];
+
+    if (newSelectedEvents.length > 0 && !isCurrentlySelected) {
+      loadEventVersions(newSelectedEvents[0]);
     }
-  };
 
-  const handleStatusToggle = (e) => {
     setFormData({
       ...formData,
-      status: e.target.checked ? 'active' : 'inactive',
+      trigger_events: newSelectedEvents,
+      trigger_event_version: newSelectedEvents.length > 0 ? formData.trigger_event_version : 'latest'
     });
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleVersionSelect = (itemId) => {
+    setVersionItems(prev => prev.map(item => ({
+      ...item,
+      selected: item.id === itemId
+    })));
+    setFormData({ ...formData, trigger_event_version: itemId });
+  };
+
+  const handleStatusToggle = () => {
+    setFormData({
+      ...formData,
+      status: formData.status === 'active' ? 'inactive' : 'active',
+    });
+  };
+
+  const handleSequenceTypeSelect = (itemId) => {
+    setSequenceTypeItems(prev => prev.map(item => ({
+      ...item,
+      selected: item.id === itemId
+    })));
+    setFormData({ ...formData, sequence_type: itemId });
+  };
+
+  const handleSubmit = async () => {
     setError('');
 
-    // Validation
     if (!formData.name.trim()) {
       setError('Sequence name is required');
       return;
@@ -150,12 +240,10 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
     }
 
     try {
-      // If this is a new sequence, open the builder instead of saving immediately
       if (!sequence) {
         onOpenBuilder(formData);
         onClose();
       } else {
-        // For editing existing sequences, just save
         await onSave(formData);
         onClose();
       }
@@ -164,237 +252,189 @@ const SequenceForm = ({ open, onClose, onSave, onOpenBuilder, sequence = null, t
     }
   };
 
+  const handleButtonClick = (buttonId) => {
+    if (buttonId === 'cancel') {
+      onClose();
+    } else if (buttonId === 'submit') {
+      handleSubmit();
+    }
+  };
+
+  const modalButtons = [
+    {
+      id: 'cancel',
+      type: ButtonTypes.SECONDARY,
+      label: 'Cancel',
+    },
+    {
+      id: 'submit',
+      type: ButtonTypes.PRIMARY,
+      label: sequence ? 'Update' : 'Create Sequence',
+      disabled: formData.trigger_type === 'schedule' && !sequence,
+    },
+  ];
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <form onSubmit={handleSubmit}>
-        <DialogTitle>
-          {sequence ? 'Edit Sequence' : 'Create New Sequence'}
-        </DialogTitle>
-        <DialogContent>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
-
-          <TextField
-            name="name"
-            label="Sequence Name"
-            value={formData.name}
-            onChange={handleChange}
-            fullWidth
-            margin="normal"
-            required
-            helperText="A descriptive name for the sequence"
+    <Modal
+      open={open}
+      type={ModalTypes.WITH_HEIGHT_TRANSITIONS}
+      header={sequence ? 'Edit Sequence' : 'Create New Sequence'}
+      onClose={onClose}
+      showClose={true}
+      buttons={modalButtons}
+      onButtonClick={handleButtonClick}
+      id={modalId}
+      className="sequence-form-modal sequence-form-modal--wide"
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '8px 0', minWidth: '500px' }}>
+        {error && (
+          <Banner
+            type={BannerTypes.ERROR}
+            size={BannerSizes.SMALL}
+            message={error}
           />
+        )}
 
-          <TextField
-            name="description"
-            label="Description"
-            value={formData.description}
-            onChange={handleChange}
-            fullWidth
-            margin="normal"
-            multiline
-            rows={3}
-            helperText="Describe what this sequence does"
-          />
+        {/* Sequence Name */}
+        <Input
+          type={InputTypes.TEXT}
+          label="Sequence Name"
+          placeholder="Enter a descriptive name for the sequence"
+          value={formData.name}
+          onChange={handleNameChange}
+          hintText="A descriptive name for the sequence"
+          isRequired={true}
+        />
 
-          {!sequence && (
-            <>
-              <FormControl component="fieldset" sx={{ mt: 3, mb: 2 }}>
-                <FormLabel component="legend">Sequence Trigger</FormLabel>
-                <RadioGroup
-                  name="trigger_type"
-                  value={formData.trigger_type}
-                  onChange={handleChange}
-                >
-                  <FormControlLabel
-                    value="event"
-                    control={<Radio />}
-                    label="Trigger on Event"
+        {/* Description */}
+        <Input
+          multiline={true}
+          multilineRowsCount={3}
+          label="Description"
+          placeholder="Describe what this sequence does"
+          value={formData.description}
+          onChange={handleDescriptionChange}
+          hintText="Describe what this sequence does"
+        />
+
+        {/* Trigger Type Selection - Only for new sequences */}
+        {!sequence && (
+          <>
+            <div>
+              <div style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#344054' }}>
+                Sequence Trigger
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <Checkbox
+                  type={CheckboxTypes.RADIO}
+                  label="Trigger on Event"
+                  hintText="Execute this sequence when specific events occur"
+                  checked={formData.trigger_type === 'event'}
+                  onChange={() => handleTriggerTypeChange('event')}
+                  size={CheckboxSizes.MEDIUM}
+                />
+                <Checkbox
+                  type={CheckboxTypes.RADIO}
+                  label="Trigger on Schedule"
+                  hintText="Execute this sequence on a scheduled basis (Coming Soon)"
+                  checked={formData.trigger_type === 'schedule'}
+                  onChange={() => handleTriggerTypeChange('schedule')}
+                  size={CheckboxSizes.MEDIUM}
+                />
+              </div>
+            </div>
+
+            {/* Event Selection - Multi-select Dropdown */}
+            {formData.trigger_type === 'event' && (
+              <div className="sequence-form-dropdown">
+                {loadingEvents ? (
+                  <div style={{ padding: '16px', textAlign: 'center' }}>
+                    <Loading loaderMsgProps={{ loaderMsg: 'Loading events...' }} />
+                  </div>
+                ) : events.length === 0 ? (
+                  <>
+                    <div style={{ marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#344054' }}>
+                      Select Events <span style={{ color: '#ef4444' }}>*</span>
+                    </div>
+                    <div style={{ padding: '16px', textAlign: 'center', color: '#6b7280', fontSize: '14px', border: '1px solid #d1d5db', borderRadius: '8px' }}>
+                      No events available
+                    </div>
+                  </>
+                ) : (
+                  <DropdownMultiSelect
+                    key={`events-${formData.trigger_events.join(',')}`}
+                    label="Select Events *"
+                    items={eventItems}
+                    placeholder="Select trigger events..."
+                    onSelect={handleEventSelect}
+                    withSearch={true}
+                    withClearSelection={true}
                   />
-                  <FormControlLabel
-                    value="schedule"
-                    control={<Radio />}
-                    label="Trigger on Schedule"
-                  />
-                </RadioGroup>
-              </FormControl>
+                )}
+                {formData.trigger_events.length === 0 && !loadingEvents && events.length > 0 && (
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#ef4444' }}>
+                    Please select at least one event
+                  </div>
+                )}
+              </div>
+            )}
 
-              {formData.trigger_type === 'event' && (
-                <Box sx={{ mt: 2, mb: 1 }}>
-                  <Typography variant="caption" sx={{ display: 'block', mb: 1, fontWeight: 500 }}>
-                    Select Events *
-                  </Typography>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      maxHeight: '200px',
-                      overflowY: 'auto',
-                      p: 1,
-                      backgroundColor: loadingEvents ? '#f9fafb' : 'white',
-                    }}
-                  >
-                    {loadingEvents ? (
-                      <Typography variant="body2" sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                        Loading events...
-                      </Typography>
-                    ) : events.length === 0 ? (
-                      <Typography variant="body2" sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                        No events available
-                      </Typography>
-                    ) : (
-                      events.map((event) => (
-                        <FormControlLabel
-                          key={event.id}
-                          control={
-                            <Checkbox
-                              checked={formData.trigger_events.includes(event.id)}
-                              onChange={(e) => {
-                                const newSelectedEvents = e.target.checked
-                                  ? [...formData.trigger_events, event.id]
-                                  : formData.trigger_events.filter(id => id !== event.id);
+            {/* Event Version Selection */}
+            {formData.trigger_type === 'event' && Array.isArray(formData.trigger_events) && formData.trigger_events.length > 0 && (
+              <div className="sequence-form-dropdown">
+                <DropdownSingleSelect
+                  label="Select Event Version"
+                  items={versionItems}
+                  placeholder="Select a version..."
+                  onSelect={handleVersionSelect}
+                  disabled={loadingVersions}
+                />
+                <div style={{ marginTop: '4px', fontSize: '12px', color: '#6b7280' }}>
+                  Select a specific version or use the latest version automatically
+                </div>
+              </div>
+            )}
 
-                                if (newSelectedEvents.length > 0) {
-                                  loadEventVersions(newSelectedEvents[0]);
-                                  setFormData({
-                                    ...formData,
-                                    trigger_events: newSelectedEvents,
-                                    trigger_event_version: 'latest'
-                                  });
-                                } else {
-                                  setFormData({ ...formData, trigger_events: newSelectedEvents });
-                                }
-                              }}
-                              size="small"
-                            />
-                          }
-                          label={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                              <Typography variant="body2">{event.name}</Typography>
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  color: event.event_type === 'system' ? 'secondary.main' : 'primary.main',
-                                  fontWeight: 500,
-                                }}
-                              >
-                                ({event.event_type === 'system' ? 'System' : 'Custom'})
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                sx={{
-                                  color: 'text.secondary',
-                                  fontWeight: 600,
-                                  backgroundColor: '#dbeafe',
-                                  color: '#1e40af',
-                                  px: 0.75,
-                                  py: 0.25,
-                                  borderRadius: '4px',
-                                  fontSize: '0.65rem',
-                                }}
-                              >
-                                v{event.version || 1}
-                              </Typography>
-                            </Box>
-                          }
-                          sx={{ width: '100%', mx: 0, my: 0.25 }}
-                        />
-                      ))
-                    )}
-                  </Paper>
-                  {formData.trigger_events.length === 0 && (
-                    <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'error.main' }}>
-                      Please select at least one event
-                    </Typography>
-                  )}
-                </Box>
-              )}
-
-              {formData.trigger_type === 'event' && Array.isArray(formData.trigger_events) && formData.trigger_events.length > 0 && (
-                <Box sx={{ mt: 2, mb: 1 }}>
-                  <Typography variant="caption" sx={{ display: 'block', mb: 0.5, fontWeight: 500 }}>
-                    Select Event Version
-                  </Typography>
-                  <select
-                    name="trigger_event_version"
-                    value={formData.trigger_event_version}
-                    onChange={handleChange}
-                    disabled={loadingVersions}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      fontSize: '14px',
-                      border: '1px solid #d1d5db',
-                      borderRadius: '4px',
-                      backgroundColor: 'white',
-                    }}
-                  >
-                    <option value="latest">Latest Version (Auto) - Always uses the most recent version</option>
-                    {eventVersions.map((version) => (
-                      <option key={version.version} value={version.version}>
-                        Version {version.version} (Created: {version.created_at})
-                      </option>
-                    ))}
-                  </select>
-                  <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'text.secondary' }}>
-                    Select a specific version or use the latest version automatically
-                  </Typography>
-                </Box>
-              )}
-
-              {formData.trigger_type === 'schedule' && (
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  Schedule-based triggers are coming soon. This feature is currently under development.
-                </Alert>
-              )}
-            </>
-          )}
-
-          {sequence && (
-            <>
-              <TextField
-                select
-                name="sequence_type"
-                label="Sequence Type"
-                value={formData.sequence_type}
-                onChange={handleChange}
-                fullWidth
-                margin="normal"
-                helperText="Select whether this is a system or custom sequence"
-              >
-                <MenuItem value="system">System Sequence</MenuItem>
-                <MenuItem value="custom">Custom Sequence</MenuItem>
-              </TextField>
-
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.status === 'active'}
-                    onChange={handleStatusToggle}
-                    color="primary"
-                  />
-                }
-                label={formData.status === 'active' ? 'Active' : 'Inactive'}
-                sx={{ mt: 2 }}
+            {/* Schedule Coming Soon */}
+            {formData.trigger_type === 'schedule' && (
+              <Banner
+                type={BannerTypes.INFO}
+                size={BannerSizes.SMALL}
+                message="Schedule-based triggers are coming soon. This feature is currently under development."
               />
-            </>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            variant="contained"
-            color="primary"
-            disabled={formData.trigger_type === 'schedule' && !sequence}
-          >
-            {sequence ? 'Update' : 'Create Sequence'}
-          </Button>
-        </DialogActions>
-      </form>
-    </Dialog>
+            )}
+          </>
+        )}
+
+        {/* Edit Mode - Sequence Type and Status */}
+        {sequence && (
+          <>
+            <div className="sequence-form-dropdown">
+              <DropdownSingleSelect
+                label="Sequence Type"
+                items={sequenceTypeItems}
+                placeholder="Select sequence type..."
+                onSelect={handleSequenceTypeSelect}
+              />
+              <div style={{ marginTop: '4px', fontSize: '12px', color: '#6b7280' }}>
+                Select whether this is a system or custom sequence
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+              <Toggle
+                checked={formData.status === 'active'}
+                onChange={handleStatusToggle}
+                size={ToggleSizes.MEDIUM}
+              />
+              <span style={{ fontSize: '14px', fontWeight: 500, color: '#344054' }}>
+                {formData.status === 'active' ? 'Active' : 'Inactive'}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 };
 

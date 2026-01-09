@@ -1,123 +1,61 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  Box,
+  Modal,
+  ModalTypes,
   Card,
-  CardContent,
-  Typography,
-  IconButton,
-} from '@mui/material';
-import {
-  Close as CloseIcon,
-  Add as CreateIcon,
-  ContentCopy as TemplateIcon,
-} from '@mui/icons-material';
+  CardTypes,
+} from '@leegality/leegality-react-component-library';
+import Icon from '@leegality/leegality-react-component-library/dist/icon';
+import { Plus, Copy } from 'react-feather';
+
+// Icon render helper for Leegality components
+const getRenderIcon = (IconComponent) =>
+  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
 
 const SequenceTypeSelector = ({ open, onClose, onSelectType }) => {
+  const modalId = useMemo(() => 'sequence-type-selector-modal', []);
+
+  const handleCardClick = (type) => {
+    onSelectType(type);
+  };
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        Create New Sequence
-        <IconButton
-          onClick={onClose}
-          sx={{
-            position: 'absolute',
-            right: 8,
-            top: 8,
-            color: '#6b7280',
-          }}
-        >
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Choose how you want to create your sequence
-        </Typography>
+    <Modal
+      open={open}
+      type={ModalTypes.DEFAULT}
+      header="Create New Sequence"
+      description="Choose how you want to create your sequence"
+      onClose={onClose}
+      showClose={true}
+      id={modalId}
+      className="sequence-type-selector-modal"
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '8px 0' }}>
+        {/* Fresh Sequence Option */}
+        <Card
+          text="Create Fresh Sequence"
+          supportingTexts={['Start from scratch and build your workflow step by step with complete control']}
+          renderIcon={getRenderIcon(Plus)}
+          useFeaturedIcon={true}
+          type={CardTypes.DEFAULT}
+          isCardClickable={true}
+          onCardClick={() => handleCardClick('fresh')}
+          className="sequence-type-card"
+        />
 
-        <Box sx={{ display: 'flex', gap: 2, flexDirection: 'column' }}>
-          <Card
-            sx={{
-              cursor: 'pointer',
-              border: '2px solid #e5e7eb',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                borderColor: '#3b82f6',
-                boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
-                transform: 'translateY(-2px)',
-              },
-            }}
-            onClick={() => onSelectType('fresh')}
-          >
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                <Box
-                  sx={{
-                    backgroundColor: '#eff6ff',
-                    borderRadius: 2,
-                    p: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <CreateIcon sx={{ color: '#3b82f6', fontSize: '2rem' }} />
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: '1.125rem' }}>
-                    Create Fresh Sequence
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Start from scratch and build your workflow step by step with complete control
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            sx={{
-              cursor: 'pointer',
-              border: '2px solid #e5e7eb',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                borderColor: '#8b5cf6',
-                boxShadow: '0 4px 12px rgba(139, 92, 246, 0.15)',
-                transform: 'translateY(-2px)',
-              },
-            }}
-            onClick={() => onSelectType('template')}
-          >
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-                <Box
-                  sx={{
-                    backgroundColor: '#f5f3ff',
-                    borderRadius: 2,
-                    p: 1.5,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <TemplateIcon sx={{ color: '#8b5cf6', fontSize: '2rem' }} />
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: '1.125rem' }}>
-                    Start from Template
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Choose from pre-built templates and customize them to fit your needs
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Box>
-      </DialogContent>
-    </Dialog>
+        {/* Template Option */}
+        <Card
+          text="Start from Template"
+          supportingTexts={['Choose from pre-built templates and customize them to fit your needs']}
+          renderIcon={getRenderIcon(Copy)}
+          useFeaturedIcon={true}
+          type={CardTypes.DEFAULT}
+          isCardClickable={true}
+          onCardClick={() => handleCardClick('template')}
+          className="sequence-type-card"
+        />
+      </div>
+    </Modal>
   );
 };
 

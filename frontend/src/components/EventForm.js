@@ -1,23 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
+  Modal,
+  ModalTypes,
   Button,
-  TextField,
-  Alert,
-  Box,
-  Typography,
-  Divider,
-  FormControlLabel,
-  Switch,
-  MenuItem,
-  Radio,
-  RadioGroup,
-  FormControl,
-  FormLabel,
-} from '@mui/material';
+  ButtonTypes,
+  ButtonSizes,
+  Input,
+  InputTypes,
+  ToggleSizes,
+  Checkbox,
+  CheckboxTypes,
+  DropdownSingleSelect,
+  Accordion,
+  AccordionTypes,
+  AccordionSizes,
+  ContentDivider,
+} from '@leegality/leegality-react-component-library';
+import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
+import Icon from '@leegality/leegality-react-component-library/dist/icon';
+import { Plus, Save } from 'react-feather';
 
 const defaultParameters = {
   "CPID": {
@@ -41,7 +43,17 @@ const sampleAcknowledgementPayload = {
   timestamp: '2024-01-01T00:00:00Z'
 };
 
+// HTTP Status Code options for dropdown
+const httpStatusCodes = [
+  { id: '200', label: '200 - OK', selected: false },
+  { id: '201', label: '201 - Created', selected: false },
+  { id: '202', label: '202 - Accepted', selected: false },
+  { id: '203', label: '203 - Non-Authoritative', selected: false },
+];
+
 const EventForm = ({ open, onClose, onSave, event = null }) => {
+  const modalId = useMemo(() => uuidv4(), []);
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -56,6 +68,10 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
   const [error, setError] = useState('');
   const [parametersJson, setParametersJson] = useState('');
   const [acknowledgementPayloadJson, setAcknowledgementPayloadJson] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Dropdown items for status codes
+  const [statusCodeItems, setStatusCodeItems] = useState(httpStatusCodes);
 
   useEffect(() => {
     if (event) {
@@ -72,6 +88,11 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
       });
       setParametersJson(JSON.stringify(event.parameters || defaultParameters, null, 2));
       setAcknowledgementPayloadJson(JSON.stringify(event.acknowledgement_payload || sampleAcknowledgementPayload, null, 2));
+      // Set the selected status code
+      setStatusCodeItems(httpStatusCodes.map(item => ({
+        ...item,
+        selected: item.id === String(event.acknowledgement_status_code || 200)
+      })));
     } else {
       setFormData({
         name: '',
@@ -86,16 +107,21 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
       });
       setParametersJson(JSON.stringify(defaultParameters, null, 2));
       setAcknowledgementPayloadJson(JSON.stringify(sampleAcknowledgementPayload, null, 2));
+      setStatusCodeItems(httpStatusCodes.map(item => ({
+        ...item,
+        selected: item.id === '200'
+      })));
     }
     setError('');
+    setSaving(false);
   }, [event, open]);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData({
-      ...formData,
-      [name]: type === 'checkbox' ? checked : value,
-    });
+  const handleNameChange = (e) => {
+    setFormData({ ...formData, name: e.target.value });
+  };
+
+  const handleDescriptionChange = (e) => {
+    setFormData({ ...formData, description: e.target.value });
   };
 
   const handleParametersChange = (e) => {
@@ -144,8 +170,28 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleAcknowledgementToggle = (checked) => {
+    setFormData({ ...formData, acknowledgement_enabled: checked });
+  };
+
+  const handleAcknowledgementTypeChange = (type) => {
+    setFormData({ ...formData, acknowledgement_type: type });
+  };
+
+  const handleStatusCodeSelect = (itemId) => {
+    setStatusCodeItems(prevItems =>
+      prevItems.map(item => ({
+        ...item,
+        selected: item.id === itemId
+      }))
+    );
+    setFormData({
+      ...formData,
+      acknowledgement_status_code: parseInt(itemId, 10)
+    });
+  };
+
+  const handleSubmit = async () => {
     setError('');
 
     // Validation
@@ -175,196 +221,237 @@ const EventForm = ({ open, onClose, onSave, event = null }) => {
     }
 
     try {
+      setSaving(true);
       await onSave(formData);
       onClose();
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to save event');
+    } finally {
+      setSaving(false);
     }
   };
 
+  const handleClose = () => {
+    if (!saving) {
+      onClose();
+    }
+  };
+
+  // Icon render helper
+  const getRenderIcon = (IconComponent) => IconComponent
+    ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} />
+    : null;
+
+  // Toggle props for acknowledgement accordion
+  const acknowledgementToggleProps = {
+    withToggle: true,
+    isToggled: formData.acknowledgement_enabled,
+    onToggleChange: handleAcknowledgementToggle,
+    toggleSize: ToggleSizes.MEDIUM,
+    isToggleDisabled: false,
+  };
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <form onSubmit={handleSubmit}>
-        <DialogTitle>
-          {event ? 'Edit Event' : 'Create New Event'}
-        </DialogTitle>
-        <DialogContent>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
-          )}
+    <Modal
+      open={open}
+      type={ModalTypes.WITH_HEIGHT_TRANSITIONS}
+      id={modalId}
+      header={event ? 'Edit Event' : 'Create New Event'}
+      showClose={true}
+      onClose={handleClose}
+      className="event-form-modal"
+    >
+      <div className="modal-content-wrapper" style={{ padding: '0 24px' }}>
+        {/* Error Banner */}
+        {error && (
+          <div style={{ marginBottom: '16px' }}>
+            <Banner
+              type={BannerTypes.ERROR}
+              size={BannerSizes.SMALL}
+              message={error}
+            />
+          </div>
+        )}
 
-          <TextField
-            name="name"
+        {/* Event Name */}
+        <div style={{ marginBottom: '16px' }}>
+          <Input
+            type={InputTypes.TEXT}
             label="Event Name"
+            placeholder="Enter a descriptive name for the event"
             value={formData.name}
-            onChange={handleChange}
-            fullWidth
-            margin="normal"
-            required
-            helperText="A descriptive name for the event"
+            onChange={handleNameChange}
+            hintText="A descriptive name for the event"
+            isInvalid={!formData.name.trim() && error.includes('name')}
           />
+        </div>
 
-          <TextField
-            name="description"
+        {/* Description */}
+        <div style={{ marginBottom: '24px' }}>
+          <Input
+            type={InputTypes.TEXT}
             label="Description"
+            placeholder="Describe when this event is triggered"
             value={formData.description}
-            onChange={handleChange}
-            fullWidth
-            margin="normal"
-            multiline
-            rows={2}
-            helperText="Describe when this event is triggered"
+            onChange={handleDescriptionChange}
+            multiline={true}
+            multilineRowsCount={2}
+            hintText="Describe when this event is triggered"
           />
+        </div>
 
-          <Divider sx={{ my: 3 }} />
+        <ContentDivider />
 
-          {/* Event Parameters JSON Schema Section */}
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Event Parameters (JSON Schema)
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Define the parameter structure for this event. Each parameter should include type, required, and description fields.
-            </Typography>
+        {/* Event Parameters Section - Simple section */}
+        <div style={{ marginTop: '24px', marginBottom: '24px' }}>
+          <Input
+            type={InputTypes.TEXT}
+            label="Event Parameters"
+            value={parametersJson}
+            onChange={handleParametersChange}
+            multiline={true}
+            multilineRowsCount={10}
+            hintText='Each parameter should include type, required, and description fields'
+            className="json-input"
+          />
+        </div>
 
-            <TextField
-              label="Parameters (JSON Schema)"
-              value={parametersJson}
-              onChange={handleParametersChange}
-              fullWidth
-              multiline
-              rows={10}
-              helperText='Define parameters like: {"CPID": {"type": "string", "required": true, "description": "Document ID"}}'
-              sx={{
-                '& textarea': {
-                  fontFamily: 'monospace',
-                  fontSize: '0.875rem',
-                },
-              }}
-            />
-          </Box>
+        <ContentDivider />
 
-          <Divider sx={{ my: 3 }} />
+        {/* Webhook Acknowledgement Section - Accordion with Toggle */}
+        <div style={{ marginTop: '24px', marginBottom: '24px' }}>
+          <Accordion
+            label="Webhook Acknowledgement"
+            description="Configure how the system responds when this webhook is received"
+            withToggleProps={acknowledgementToggleProps}
+            size={AccordionSizes.MEDIUM}
+            type={AccordionTypes.CARD}
+          >
+            <div style={{ padding: '16px' }}>
+              {/* Response Type Radio Buttons */}
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: '#344054',
+                  marginBottom: '8px'
+                }}>
+                  Response Type
+                </div>
+                <div style={{ display: 'flex', gap: '24px' }}>
+                  <Checkbox
+                    type={CheckboxTypes.RADIO}
+                    label="Basic Success Response"
+                    checked={formData.acknowledgement_type === 'basic'}
+                    onChange={() => handleAcknowledgementTypeChange('basic')}
+                  />
+                  <Checkbox
+                    type={CheckboxTypes.RADIO}
+                    label="Custom Success Response"
+                    checked={formData.acknowledgement_type === 'custom'}
+                    onChange={() => handleAcknowledgementTypeChange('custom')}
+                  />
+                </div>
+              </div>
 
-          {/* Event Acknowledgement Section */}
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Webhook Acknowledgement
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Configure how the system responds when this webhook is received
-            </Typography>
-
-            <FormControlLabel
-              control={
-                <Switch
-                  name="acknowledgement_enabled"
-                  checked={formData.acknowledgement_enabled}
-                  onChange={handleChange}
-                  color="primary"
-                />
-              }
-              label="Enable Acknowledgement Response"
-            />
-
-            {formData.acknowledgement_enabled && (
-              <Box sx={{ mt: 2, pl: 2, borderLeft: '3px solid #7c3aed' }}>
-                <FormControl component="fieldset" sx={{ mb: 2 }}>
-                  <FormLabel component="legend" sx={{ mb: 1 }}>Response Type</FormLabel>
-                  <RadioGroup
-                    name="acknowledgement_type"
-                    value={formData.acknowledgement_type}
-                    onChange={handleChange}
-                    row
-                  >
-                    <FormControlLabel
-                      value="basic"
-                      control={<Radio />}
-                      label="Basic Success Response"
-                    />
-                    <FormControlLabel
-                      value="custom"
-                      control={<Radio />}
-                      label="Custom Success Response"
-                    />
-                  </RadioGroup>
-                </FormControl>
-
-                <TextField
-                  select
-                  name="acknowledgement_status_code"
+              {/* HTTP Status Code Dropdown */}
+              <div style={{ marginBottom: '16px' }}>
+                <DropdownSingleSelect
                   label="HTTP Status Code"
-                  value={formData.acknowledgement_status_code}
-                  onChange={handleChange}
-                  fullWidth
-                  margin="normal"
-                  helperText="HTTP status code to return when event is received"
-                >
-                  <MenuItem value={200}>200</MenuItem>
-                  <MenuItem value={201}>201</MenuItem>
-                  <MenuItem value={202}>202</MenuItem>
-                  <MenuItem value={203}>203</MenuItem>
-                </TextField>
-
-                {formData.acknowledgement_type === 'custom' && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
-                      Custom Response Payload
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-                      Define a static JSON payload to return. Dynamic values are not supported in acknowledgement responses.
-                    </Typography>
-                    <TextField
-                      label="Acknowledgement Payload (JSON)"
-                      value={acknowledgementPayloadJson}
-                      onChange={handleAcknowledgementPayloadChange}
-                      fullWidth
-                      margin="normal"
-                      multiline
-                      rows={8}
-                      helperText="Static JSON payload to return in the acknowledgement response"
-                      sx={{
-                        '& textarea': {
-                          fontFamily: 'monospace',
-                          fontSize: '0.875rem',
-                        },
-                      }}
-                    />
-                  </Box>
-                )}
-              </Box>
-            )}
-          </Box>
-
-          <Divider sx={{ my: 3 }} />
-
-          {/* Event Status Section */}
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Event Status
-            </Typography>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={formData.status === 'active'}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.checked ? 'active' : 'inactive' })}
-                  color="primary"
+                  items={statusCodeItems}
+                  placeholder="Select status code"
+                  onSelect={handleStatusCodeSelect}
                 />
-              }
-              label={formData.status === 'active' ? 'Active' : 'Inactive'}
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" variant="contained" color="primary">
-            {event ? 'Update' : 'Create'}
-          </Button>
-        </DialogActions>
-      </form>
-    </Dialog>
+                <div style={{
+                  fontSize: '12px',
+                  color: '#667085',
+                  marginTop: '4px'
+                }}>
+                  HTTP status code to return when event is received
+                </div>
+              </div>
+
+              {/* Custom Payload - only show when custom type is selected */}
+              {formData.acknowledgement_type === 'custom' && (
+                <div style={{ marginTop: '16px' }}>
+                  <Input
+                    type={InputTypes.TEXT}
+                    label="Custom Response Payload (JSON)"
+                    value={acknowledgementPayloadJson}
+                    onChange={handleAcknowledgementPayloadChange}
+                    multiline={true}
+                    multilineRowsCount={8}
+                    hintText="Static JSON payload to return in the acknowledgement response"
+                    className="json-input"
+                  />
+                </div>
+              )}
+            </div>
+          </Accordion>
+        </div>
+
+        {/* Modal Buttons */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: '12px',
+          paddingTop: '16px',
+          paddingBottom: '24px',
+          borderTop: '1px solid #e5e7eb'
+        }}>
+          <Button
+            label="Cancel"
+            type={ButtonTypes.SECONDARY}
+            size={ButtonSizes.MEDIUM}
+            onClick={handleClose}
+            disabled={saving}
+          />
+          <Button
+            label={event ? 'Update Event' : 'Create Event'}
+            type={ButtonTypes.PRIMARY}
+            size={ButtonSizes.MEDIUM}
+            onClick={handleSubmit}
+            loading={saving}
+            disabled={saving}
+            renderIcon={getRenderIcon(event ? Save : Plus)}
+          />
+        </div>
+      </div>
+
+      <style>{`
+        .event-form-modal .modal-content-wrapper {
+          max-height: 70vh;
+          overflow-y: auto;
+        }
+
+        .event-form-modal .json-input textarea,
+        .event-form-modal .input-wrapper textarea {
+          font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+          font-size: 13px;
+        }
+
+        /* Webhook accordion styling - remove gap between header and content */
+        .event-form-modal .accordion-cont.card [role="region"] {
+          border: 1px solid #e5e7eb !important;
+          border-top: none !important;
+          border-bottom-left-radius: 8px;
+          border-bottom-right-radius: 8px;
+          background-color: #ffffff;
+          margin-top: -1px !important;
+          padding-top: 0 !important;
+        }
+
+        .event-form-modal .accordion-cont.card .accordion-header-icon {
+          margin-bottom: 0 !important;
+        }
+
+        .event-form-modal .accordion-cont.card:has([aria-expanded="true"]) .accordion-header-icon {
+          border-bottom-left-radius: 0;
+          border-bottom-right-radius: 0;
+          border-bottom: 1px solid #e5e7eb;
+        }
+      `}</style>
+    </Modal>
   );
 };
 

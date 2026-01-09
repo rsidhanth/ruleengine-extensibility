@@ -1,36 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Box, Container } from '@mui/material';
 import {
-  Box,
+  PageHeader,
   Button,
-  Container,
-  Paper,
+  ButtonTypes,
+  ButtonSizes,
   Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-  IconButton,
-  Alert,
-  CircularProgress,
-  Chip,
+  ColumnTypes,
+  RowOverrides,
+  Toggle,
+  ToggleSizes,
+  Badge,
+  BadgeTypes,
+  BadgeSizes,
+  Loading,
+  EmptyState,
   Tooltip,
-  Snackbar,
-  Switch,
-  FormControlLabel,
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Visibility as ViewIcon,
-  ContentCopy as DuplicateIcon,
-  PlayArrow as ExecuteIcon,
-  BugReport as TestIcon,
-  FileDownload as ExportIcon,
-  FileUpload as ImportIcon,
-} from '@mui/icons-material';
+  Chip,
+} from '@leegality/leegality-react-component-library';
+import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
+import Icon from '@leegality/leegality-react-component-library/dist/icon';
+import { Plus, Upload, Edit2, Eye, Play, Copy, Trash2, Download, AlertCircle } from 'react-feather';
 import { sequencesApi } from '../services/api';
 import SequenceForm from '../components/SequenceForm';
 import SequenceBuilder from '../components/SequenceBuilder';
@@ -41,13 +31,24 @@ import ImportModal from '../components/ImportModal';
 import NameConflictDialog from '../components/NameConflictDialog';
 import DependencyErrorDialog from '../components/DependencyErrorDialog';
 
+// Icon render helper
+const getRenderIcon = (IconComponent) =>
+  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
+
+// Helper to extract trigger events from flow_nodes
+const getTriggerEvents = (sequence) => {
+  const flowNodes = sequence.flow_nodes || [];
+  const triggerNode = flowNodes.find(node => node.data?.nodeType === 'event_trigger');
+  return triggerNode?.data?.triggerEvents || [];
+};
+
 const Sequences = () => {
   const [sequences, setSequences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [selectedSequence, setSelectedSequence] = useState(null);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '' });
   const [showBuilder, setShowBuilder] = useState(false);
   const [builderData, setBuilderData] = useState(null);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
@@ -99,17 +100,15 @@ const Sequences = () => {
     setShowForm(true);
   };
 
-  const handleEdit = (sequence) => {
-    // Directly open the builder with the sequence data
+  const handleEdit = useCallback((sequence) => {
     setBuilderData(sequence);
     setShowBuilder(true);
-  };
+  }, []);
 
-  const handleView = (sequence) => {
-    // View also opens the builder (in read-only mode if needed)
+  const handleView = useCallback((sequence) => {
     setBuilderData(sequence);
     setShowBuilder(true);
-  };
+  }, []);
 
   const handleSave = async (data) => {
     try {
@@ -126,19 +125,21 @@ const Sequences = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback(async (sequence) => {
     if (window.confirm('Are you sure you want to delete this sequence?')) {
       try {
-        await sequencesApi.delete(id);
+        await sequencesApi.delete(sequence.id);
         loadSequences();
+        setSuccessMessage('Sequence deleted successfully');
+        setTimeout(() => setSuccessMessage(''), 3000);
       } catch (err) {
         setError('Failed to delete sequence');
         console.error('Error deleting sequence:', err);
       }
     }
-  };
+  }, []);
 
-  const handleDuplicate = async (sequence) => {
+  const handleDuplicate = useCallback(async (sequence) => {
     try {
       const duplicatedData = {
         name: `${sequence.name} (Copy)`,
@@ -148,15 +149,15 @@ const Sequences = () => {
       };
       await sequencesApi.create(duplicatedData);
       loadSequences();
-      setSnackbar({ open: true, message: 'Sequence duplicated successfully!' });
+      setSuccessMessage('Sequence duplicated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setError('Failed to duplicate sequence');
       console.error('Error duplicating sequence:', err);
     }
-  };
+  }, []);
 
   const handleOpenBuilder = (sequenceData) => {
-    // If a template was selected, include template data
     const builderPayload = selectedTemplate
       ? { ...sequenceData, template: selectedTemplate }
       : sequenceData;
@@ -165,14 +166,11 @@ const Sequences = () => {
   };
 
   const handleBuilderSave = (workflowData) => {
-    // SequenceBuilder already handles the API save, we just need to update UI
     setShowBuilder(false);
     setBuilderData(null);
     loadSequences();
-    setSnackbar({
-      open: true,
-      message: workflowData.id ? 'Sequence updated successfully!' : 'Sequence created successfully!'
-    });
+    setSuccessMessage(workflowData.id ? 'Sequence updated successfully!' : 'Sequence created successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   const handleBuilderClose = () => {
@@ -180,35 +178,28 @@ const Sequences = () => {
     setBuilderData(null);
   };
 
-  const handleToggleStatus = async (sequence) => {
+  const handleToggleStatus = useCallback(async (sequence) => {
     try {
       await sequencesApi.toggleStatus(sequence.id);
       loadSequences();
       const newStatus = sequence.status === 'active' ? 'inactive' : 'active';
-      setSnackbar({
-        open: true,
-        message: `Sequence ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`,
-      });
+      setSuccessMessage(`Sequence ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully!`);
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setError('Failed to toggle sequence status');
       console.error('Error toggling sequence status:', err);
     }
-  };
+  }, []);
 
-  const handleTest = (sequence) => {
-    console.log('Sequences.js - handleTest called with sequence:', sequence);
-    console.log('Sequences.js - sequence.id:', sequence.id);
-    console.log('Sequences.js - sequence.sequence_id:', sequence.sequence_id);
+  const handleTest = useCallback((sequence) => {
     setTestingSequence(sequence);
     setTestModalOpen(true);
-  };
+  }, []);
 
-  const handleExecute = async (sequence) => {
+  const handleExecute = useCallback(async (sequence) => {
     if (sequence.status !== 'active') {
-      setSnackbar({
-        open: true,
-        message: 'Sequence must be active to execute',
-      });
+      setError('Sequence must be active to execute');
+      setTimeout(() => setError(''), 3000);
       return;
     }
 
@@ -219,35 +210,21 @@ const Sequences = () => {
       });
 
       if (result.data.success) {
-        setSnackbar({
-          open: true,
-          message: `Sequence executed successfully! Execution ID: ${result.data.execution_id}`,
-        });
+        setSuccessMessage(`Sequence executed successfully! Execution ID: ${result.data.execution_id}`);
       } else {
-        setSnackbar({
-          open: true,
-          message: `Execution failed: ${result.data.error}`,
-        });
+        setError(`Execution failed: ${result.data.error}`);
       }
+      setTimeout(() => {
+        setSuccessMessage('');
+        setError('');
+      }, 5000);
     } catch (err) {
       setError('Failed to execute sequence');
       console.error('Error executing sequence:', err);
-      setSnackbar({
-        open: true,
-        message: 'Failed to execute sequence',
-      });
     }
-  };
+  }, []);
 
-  const getStatusColor = (status) => {
-    return status === 'active' ? 'success' : 'default';
-  };
-
-  const getStatusLabel = (status) => {
-    return status === 'active' ? 'Active' : 'Inactive';
-  };
-
-  const handleExport = async (sequence) => {
+  const handleExport = useCallback(async (sequence) => {
     try {
       const response = await sequencesApi.export(sequence.id);
       const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
@@ -257,11 +234,12 @@ const Sequences = () => {
       a.download = `sequence-${sequence.name}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setSnackbar({ open: true, message: 'Sequence exported successfully' });
+      setSuccessMessage('Sequence exported successfully');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       setError('Failed to export sequence');
     }
-  };
+  }, []);
 
   const handleImport = async (file, overrides = {}) => {
     try {
@@ -270,7 +248,6 @@ const Sequences = () => {
 
       setImportDataCache(importData);
 
-      // First validate dependencies
       const validationResponse = await sequencesApi.validateImport(importData);
 
       if (!validationResponse.data.valid) {
@@ -279,7 +256,6 @@ const Sequences = () => {
         return;
       }
 
-      // If validation passes, proceed with import
       const requestData = {
         ...importData,
         ...overrides
@@ -288,7 +264,8 @@ const Sequences = () => {
       const response = await sequencesApi.import(requestData);
 
       if (response.data.success) {
-        setSnackbar({ open: true, message: 'Sequence imported successfully' });
+        setSuccessMessage('Sequence imported successfully');
+        setTimeout(() => setSuccessMessage(''), 3000);
         loadSequences();
         setImportDataCache(null);
         setImportModalOpen(false);
@@ -322,7 +299,8 @@ const Sequences = () => {
       const response = await sequencesApi.import(requestData);
 
       if (response.data.success) {
-        setSnackbar({ open: true, message: 'Sequence imported successfully' });
+        setSuccessMessage('Sequence imported successfully');
+        setTimeout(() => setSuccessMessage(''), 3000);
         loadSequences();
         setImportDataCache(null);
       }
@@ -344,10 +322,257 @@ const Sequences = () => {
     }
   };
 
+  // Table columns configuration
+  const columns = useMemo(() => [
+    {
+      id: 'name',
+      type: ColumnTypes.CUSTOM,
+      label: 'Sequence Name',
+      accessor: '_nameDisplay',
+      sortable: true,
+      width: '30%',
+    },
+    {
+      id: 'sequence_id',
+      type: ColumnTypes.CUSTOM,
+      label: 'Sequence ID',
+      accessor: '_sequenceIdDisplay',
+      sortable: false,
+      width: '20%',
+    },
+    {
+      id: 'trigger_events',
+      type: ColumnTypes.CUSTOM,
+      label: 'Trigger Event',
+      accessor: '_triggerEventsDisplay',
+      sortable: false,
+      width: '25%',
+    },
+    {
+      id: 'status',
+      type: ColumnTypes.CUSTOM,
+      label: 'Status',
+      accessor: '_statusToggle',
+      sortable: false,
+      width: '15%',
+    },
+  ], []);
+
+  // Action items for table rows (first 2 visible, rest in kebab)
+  const actionItems = useMemo(() => [
+    {
+      id: 'edit',
+      label: 'Edit',
+      renderIcon: getRenderIcon(Edit2),
+      tooltipProps: { description: 'Edit sequence' },
+    },
+    {
+      id: 'view',
+      label: 'View',
+      renderIcon: getRenderIcon(Eye),
+      tooltipProps: { description: 'View sequence' },
+    },
+    {
+      id: 'test',
+      label: 'Test',
+      renderIcon: getRenderIcon(AlertCircle),
+      tooltipProps: { description: 'Test sequence' },
+    },
+    {
+      id: 'execute',
+      label: 'Execute',
+      renderIcon: getRenderIcon(Play),
+      tooltipProps: { description: 'Execute sequence' },
+    },
+    {
+      id: 'export',
+      label: 'Export',
+      renderIcon: getRenderIcon(Download),
+      tooltipProps: { description: 'Export sequence' },
+    },
+    {
+      id: 'duplicate',
+      label: 'Duplicate',
+      renderIcon: getRenderIcon(Copy),
+      tooltipProps: { description: 'Duplicate sequence' },
+    },
+    {
+      id: 'delete',
+      label: 'Delete',
+      renderIcon: getRenderIcon(Trash2),
+      tooltipProps: { description: 'Delete sequence' },
+    },
+  ], []);
+
+  // Handle clicking on sequence name - opens builder
+  const handleSequenceNameClick = useCallback((sequence) => {
+    handleEdit(sequence);
+  }, [handleEdit]);
+
+  // Transform data for table display
+  const tableData = useMemo(() => {
+    return sequences.map((sequence) => ({
+      ...sequence,
+      _nameDisplay: (
+        <div>
+          <div
+            style={{
+              fontWeight: 500,
+              color: '#7f56d9',
+              cursor: 'pointer',
+            }}
+            onClick={() => handleSequenceNameClick(sequence)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleSequenceNameClick(sequence)}
+          >
+            {sequence.name}
+          </div>
+          {sequence.description && (
+            <div style={{ fontSize: '12px', color: '#667085', marginTop: '2px' }}>
+              {sequence.description}
+            </div>
+          )}
+        </div>
+      ),
+      _sequenceIdDisplay: (
+        <span style={{ fontFamily: 'monospace', fontSize: '13px', color: '#344054' }}>
+          {sequence.sequence_id}
+        </span>
+      ),
+      _triggerEventsDisplay: (() => {
+        const triggerEvents = getTriggerEvents(sequence);
+        if (triggerEvents.length === 0) {
+          return (
+            <span style={{ fontSize: '14px', color: '#9ca3af', fontStyle: 'italic' }}>
+              No trigger events
+            </span>
+          );
+        }
+        const firstEvent = triggerEvents[0];
+        const remainingCount = triggerEvents.length - 1;
+        const allEventNames = triggerEvents.map(e => e.name).join(', ');
+
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px', color: '#344054' }}>
+              {firstEvent.name}
+            </span>
+            {remainingCount > 0 && (
+              <Tooltip description={allEventNames}>
+                <Chip
+                  label={`+${remainingCount}`}
+                  style={{
+                    height: '22px',
+                    fontSize: '12px',
+                    backgroundColor: '#f3f4f6',
+                    color: '#374151',
+                  }}
+                />
+              </Tooltip>
+            )}
+          </div>
+        );
+      })(),
+      _statusToggle: (
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleToggleStatus(sequence);
+          }}
+        >
+          <Toggle
+            checked={sequence.status === 'active'}
+            onChange={() => {}}
+            size={ToggleSizes.SMALL}
+          />
+          <Badge
+            label={sequence.status === 'active' ? 'Active' : 'Inactive'}
+            type={sequence.status === 'active' ? BadgeTypes.SUCCESS : BadgeTypes.GRAY}
+            size={BadgeSizes.SMALL}
+          />
+        </div>
+      ),
+      // Disable execute action for inactive sequences
+      [RowOverrides.DISABLED_ACTIONS]: sequence.status !== 'active' ? ['execute'] : [],
+    }));
+  }, [sequences, handleToggleStatus, handleSequenceNameClick]);
+
+  // Handle row action
+  const handleAction = useCallback((rowId, actionId, dataItem) => {
+    const sequence = sequences.find(s => s.id === rowId);
+    if (!sequence) return;
+
+    switch (actionId) {
+      case 'edit':
+        handleEdit(sequence);
+        break;
+      case 'view':
+        handleView(sequence);
+        break;
+      case 'test':
+        handleTest(sequence);
+        break;
+      case 'execute':
+        handleExecute(sequence);
+        break;
+      case 'export':
+        handleExport(sequence);
+        break;
+      case 'duplicate':
+        handleDuplicate(sequence);
+        break;
+      case 'delete':
+        handleDelete(sequence);
+        break;
+      default:
+        console.log('Unknown action:', actionId);
+    }
+  }, [sequences, handleEdit, handleView, handleTest, handleExecute, handleExport, handleDuplicate, handleDelete]);
+
+  // Empty state props
+  const emptyStateProps = useMemo(() => ({
+    text: 'No sequences found',
+    supportingText: 'Create your first sequence to get started',
+  }), []);
+
+  // PageHeader buttons configuration
+  const headerButtons = [
+    {
+      id: 'import',
+      label: 'Import',
+      title: 'Import sequence from JSON file',
+      type: ButtonTypes.SECONDARY,
+      renderIcon: () => <Upload size={20} stroke="currentColor" />,
+    },
+    {
+      id: 'create',
+      label: 'Create Sequence',
+      title: 'Create a new sequence',
+      type: ButtonTypes.PRIMARY,
+      renderIcon: () => <Plus size={20} stroke="currentColor" />,
+    },
+  ];
+
+  // Handle header button clicks
+  const handleHeaderButtonClick = (buttonId) => {
+    switch (buttonId) {
+      case 'import':
+        setImportModalOpen(true);
+        break;
+      case 'create':
+        handleCreate();
+        break;
+      default:
+        break;
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
+        <Loading loaderMsgProps={{ loaderMsg: 'Loading sequences...' }} />
       </Box>
     );
   }
@@ -364,164 +589,88 @@ const Sequences = () => {
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1">
-          Sequences
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<ImportIcon />}
-            onClick={() => setImportModalOpen(true)}
-          >
-            Import
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-          >
-            Create Sequence
-          </Button>
-        </Box>
+      {/* Page Header */}
+      <Box sx={{ mb: 3 }}>
+        <PageHeader
+          text="Sequences"
+          supportingText="Manage workflow sequences for automated processes"
+          buttons={headerButtons}
+          onButtonClick={handleHeaderButtonClick}
+        />
       </Box>
 
+      {/* Error Banner */}
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
+        <Box sx={{ mb: 2 }}>
+          <Banner
+            type={BannerTypes.ERROR}
+            size={BannerSizes.SMALL}
+            message={error}
+          />
+        </Box>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell><strong>Sequence Name</strong></TableCell>
-              <TableCell><strong>Sequence ID</strong></TableCell>
-              <TableCell><strong>Status</strong></TableCell>
-              <TableCell align="right"><strong>Actions</strong></TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {sequences.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} align="center">
-                  <Typography variant="body2" color="text.secondary" sx={{ py: 3 }}>
-                    No sequences found. Create your first sequence to get started.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              sequences.map((sequence) => (
-                <TableRow key={sequence.id} hover>
-                  <TableCell>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                      {sequence.name}
-                    </Typography>
-                    {sequence.description && (
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        {sequence.description}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Typography
-                      variant="body2"
-                      sx={{ fontFamily: 'monospace', fontWeight: 500 }}
-                    >
-                      {sequence.sequence_id}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={sequence.status === 'active'}
-                          onChange={() => handleToggleStatus(sequence)}
-                          color="success"
-                          size="small"
-                        />
-                      }
-                      label={
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                          {getStatusLabel(sequence.status)}
-                        </Typography>
-                      }
-                    />
-                  </TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Export sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleExport(sequence)}
-                        color="info"
-                      >
-                        <ExportIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="View sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleView(sequence)}
-                        color="info"
-                      >
-                        <ViewIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Test sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleTest(sequence)}
-                        color="warning"
-                      >
-                        <TestIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Quick execute sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleExecute(sequence)}
-                        color="success"
-                        disabled={sequence.status !== 'active'}
-                      >
-                        <ExecuteIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Duplicate sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDuplicate(sequence)}
-                        color="secondary"
-                      >
-                        <DuplicateIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Edit sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleEdit(sequence)}
-                        color="primary"
-                      >
-                        <EditIcon />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete sequence">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDelete(sequence.id)}
-                        color="error"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      {/* Success Banner */}
+      {successMessage && (
+        <Box sx={{ mb: 2 }}>
+          <Banner
+            type={BannerTypes.SUCCESS}
+            size={BannerSizes.SMALL}
+            message={successMessage}
+          />
+        </Box>
+      )}
 
+      {/* Table with CSS fixes for column stability */}
+      <Box sx={{
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        border: '1px solid #e5e7eb',
+        overflow: 'hidden',
+        // Fix column gap and action column width issues
+        '& .tbl-cont': {
+          borderTop: 'none',
+          '& table': {
+            borderCollapse: 'collapse',
+            borderSpacing: 0,
+            tableLayout: 'fixed',
+          },
+          '& .tbl-th, & .tbl-td': {
+            borderRight: 'none',
+          },
+          // Fix action column width to prevent layout shift on hover
+          '& .tbl-row-action-items-cont': {
+            minWidth: '130px',
+            width: '130px',
+            '& .trai-wrapper': {
+              '& .tbl-row-action-item:not(.kebab)': {
+                // Always display but invisible until hover (prevents layout shift)
+                display: 'flex !important',
+                opacity: 0,
+                pointerEvents: 'none',
+              },
+            },
+          },
+          // On row hover, make action items visible and clickable
+          '& table tr:hover .tbl-row-action-items-cont .trai-wrapper .tbl-row-action-item:not(.kebab)': {
+            opacity: 1,
+            pointerEvents: 'auto',
+          },
+        },
+      }}>
+        <Table
+          columns={columns}
+          data={tableData}
+          actionItems={actionItems}
+          maxActions={2}
+          onAction={handleAction}
+          selectable={false}
+          showPagination={false}
+          emptyStateProps={emptyStateProps}
+        />
+      </Box>
+
+      {/* Modals */}
       <SequenceTypeSelector
         open={showTypeSelector}
         onClose={() => setShowTypeSelector(false)}
@@ -563,7 +712,6 @@ const Sequences = () => {
         open={!!nameConflictData}
         onClose={() => {
           setNameConflictData(null);
-          // Don't clear importDataCache here - it's needed for retry in handleConflictResolve
         }}
         onConfirm={handleConflictResolve}
         conflictData={nameConflictData?.data}
@@ -576,14 +724,6 @@ const Sequences = () => {
           setImportDataCache(null);
         }}
         missingDependencies={dependencyErrorData}
-      />
-
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        message={snackbar.message}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
     </Container>
   );
