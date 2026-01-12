@@ -19,7 +19,6 @@ import {
   FlashOn as EventIcon,
 } from '@mui/icons-material';
 import { eventsApi } from '../services/api';
-import notification from '@leegality/leegality-react-component-library/dist/notification';
 
 const EventConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = [], sequenceVariables = [] }) => {
   const [events, setEvents] = useState([]);
@@ -103,7 +102,7 @@ const EventConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = []
       setEvents(response.data);
     } catch (error) {
       console.error('Error loading events:', error);
-      notification.error('Failed to load events', 'Check console for details.');
+      alert('Failed to load events. Check console for details.');
     } finally {
       setLoading(false);
     }

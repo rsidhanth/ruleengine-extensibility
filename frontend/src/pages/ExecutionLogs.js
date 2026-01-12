@@ -1,77 +1,127 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Box, Container } from '@mui/material';
+import React, { useState, useEffect } from 'react';
 import {
-  Input,
-  InputTypes,
-  Button,
-  ButtonTypes,
-  ButtonSizes,
+  Box,
+  Typography,
+  Paper,
   Table,
-  ColumnTypes,
-  Badge,
-  BadgeTypes,
-  BadgeSizes,
-  Loading,
-  EmptyState,
-  DropdownSingleSelect,
-  PageHeader,
-} from '@leegality/leegality-react-component-library';
-import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
-import Icon from '@leegality/leegality-react-component-library/dist/icon';
-import { Eye } from 'react-feather';
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  Chip,
+  Button,
+  TextField,
+  InputAdornment,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
+import {
+  Search as SearchIcon,
+  Visibility as VisibilityIcon,
+} from '@mui/icons-material';
 import { sequenceExecutionsApi } from '../services/api';
 
-// Icon render helper
-const getRenderIcon = (IconComponent) =>
-  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
+const ExecutionRow = ({ execution, onViewDetails }) => {
+  const getStatusColor = (status) => {
+    const colors = {
+      running: '#3b82f6',
+      completed: '#10b981',
+      failed: '#ef4444',
+      cancelled: '#6b7280',
+    };
+    return colors[status] || '#6b7280';
+  };
 
-// Status badge mapping
-const getStatusBadgeType = (status) => {
-  switch (status) {
-    case 'running': return BadgeTypes.PRIMARY;
-    case 'completed': return BadgeTypes.SUCCESS;
-    case 'failed': return BadgeTypes.ERROR;
-    case 'cancelled': return BadgeTypes.DEFAULT;
-    default: return BadgeTypes.DEFAULT;
-  }
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const formatDuration = (ms) => {
+    if (!ms) return '-';
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 60000).toFixed(2)}m`;
+  };
+
+  return (
+    <TableRow hover>
+      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+        <Typography variant="body2">{formatDate(execution.started_at)}</Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+          {execution.sequence_name}
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          ID: {execution.sequence_id}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+          {execution.execution_id}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Chip
+          label={execution.status}
+          size="small"
+          sx={{
+            backgroundColor: `${getStatusColor(execution.status)}20`,
+            color: getStatusColor(execution.status),
+            fontWeight: 600,
+            textTransform: 'capitalize',
+          }}
+        />
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2">{execution.event_name || '-'}</Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+          {execution.trigger_source || 'N/A'}
+        </Typography>
+      </TableCell>
+      <TableCell>
+        <Typography variant="body2">{formatDuration(execution.duration_ms)}</Typography>
+      </TableCell>
+      <TableCell>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<VisibilityIcon />}
+          onClick={() => onViewDetails(execution.execution_id)}
+          sx={{ textTransform: 'none' }}
+        >
+          View Details
+        </Button>
+      </TableCell>
+    </TableRow>
+  );
 };
-
-const formatDate = (dateString) => {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-};
-
-const formatDuration = (ms) => {
-  if (!ms) return '-';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-  return `${(ms / 60000).toFixed(2)}m`;
-};
-
-// Status filter options
-const statusOptions = [
-  { id: '', label: 'All Statuses', selected: true },
-  { id: 'running', label: 'Running', selected: false },
-  { id: 'completed', label: 'Completed', selected: false },
-  { id: 'failed', label: 'Failed', selected: false },
-  { id: 'cancelled', label: 'Cancelled', selected: false },
-];
 
 const ExecutionLogs = ({ onNavigateToDetails }) => {
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [statusItems, setStatusItems] = useState(statusOptions);
 
   useEffect(() => {
     loadExecutions();
@@ -91,265 +141,127 @@ const ExecutionLogs = ({ onNavigateToDetails }) => {
     }
   };
 
-  const handleStatusSelect = (itemId) => {
-    setStatusItems(prevItems =>
-      prevItems.map(item => ({
-        ...item,
-        selected: item.id === itemId
-      }))
-    );
-    setStatusFilter(itemId);
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
   };
 
   // Filter executions
-  const filteredExecutions = useMemo(() => {
-    return executions.filter((execution) => {
-      const matchesSearch =
-        searchTerm === '' ||
-        execution.sequence_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        execution.execution_id.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredExecutions = executions.filter((execution) => {
+    const matchesSearch =
+      searchTerm === '' ||
+      execution.sequence_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      execution.execution_id.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesStatus = statusFilter === '' || execution.status === statusFilter;
+    const matchesStatus = statusFilter === '' || execution.status === statusFilter;
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [executions, searchTerm, statusFilter]);
+    return matchesSearch && matchesStatus;
+  });
 
-  // Handle table actions
-  const handleAction = (rowId, actionId, dataItem) => {
-    const execution = executions.find(e => e.id === rowId);
-    if (!execution) return;
-
-    if (actionId === 'view') {
-      onNavigateToDetails(execution.execution_id);
-    }
-  };
-
-  // Table action items
-  const actionItems = useMemo(() => [
-    { id: 'view', label: 'View Details', renderIcon: getRenderIcon(Eye), tooltipProps: { description: 'View execution details' } },
-  ], []);
-
-  // Table columns
-  const columns = useMemo(() => [
-    {
-      id: 'sequence_name',
-      label: 'Sequence',
-      accessor: '_sequenceDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 200,
-    },
-    {
-      id: 'started_at',
-      label: 'Started At',
-      accessor: '_startedAtDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 180,
-    },
-    {
-      id: 'execution_id',
-      label: 'Execution ID',
-      accessor: '_executionIdDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 250,
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      accessor: '_statusBadge',
-      type: ColumnTypes.BADGE,
-      width: 120,
-    },
-    {
-      id: 'event_name',
-      label: 'Triggered By',
-      accessor: '_triggeredByDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 150,
-    },
-    {
-      id: 'duration_ms',
-      label: 'Duration',
-      accessor: '_durationDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 100,
-    },
-  ], []);
-
-  // Handle clicking on execution - navigate to details
-  const handleExecutionClick = useCallback((execution) => {
-    onNavigateToDetails(execution.execution_id);
-  }, [onNavigateToDetails]);
-
-  // Transform data for table
-  const tableData = useMemo(() => {
-    return filteredExecutions.map(execution => ({
-      id: execution.id.toString(),
-      ...execution,
-      // Started at display with trigger source
-      _startedAtDisplay: (
-        <div>
-          <div style={{ fontSize: '13px', color: '#344054', whiteSpace: 'nowrap' }}>
-            {formatDate(execution.started_at)}
-          </div>
-          <div style={{ fontSize: '11px', color: '#667085' }}>
-            {execution.trigger_source || 'N/A'}
-          </div>
-        </div>
-      ),
-      // Sequence display - clickable purple text
-      _sequenceDisplay: (
-        <div>
-          <div
-            style={{
-              fontWeight: 500,
-              color: '#7f56d9',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
-            onClick={() => handleExecutionClick(execution)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && handleExecutionClick(execution)}
-          >
-            {execution.sequence_name}
-          </div>
-          <div style={{ fontSize: '11px', color: '#667085' }}>ID: {execution.sequence_id}</div>
-        </div>
-      ),
-      // Execution ID display
-      _executionIdDisplay: (
-        <code style={{ fontSize: '11px', color: '#344054', backgroundColor: '#F9FAFB', padding: '2px 6px', borderRadius: '4px' }}>
-          {execution.execution_id}
-        </code>
-      ),
-      // Status badge
-      _statusBadge: {
-        label: execution.status ? execution.status.charAt(0).toUpperCase() + execution.status.slice(1) : 'N/A',
-        type: getStatusBadgeType(execution.status),
-        size: BadgeSizes.SMALL,
-      },
-      // Triggered by display
-      _triggeredByDisplay: (
-        <span style={{ fontSize: '14px', color: '#344054' }}>{execution.event_name || '-'}</span>
-      ),
-      // Duration display
-      _durationDisplay: (
-        <span style={{ fontSize: '14px', color: '#344054' }}>{formatDuration(execution.duration_ms)}</span>
-      ),
-    }));
-  }, [filteredExecutions, handleExecutionClick]);
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <Loading loaderMsgProps={{ loaderMsg: 'Loading execution logs...' }} />
-      </Box>
-    );
-  }
+  // Paginate
+  const paginatedExecutions = filteredExecutions.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      {/* Page Header */}
-      <Box sx={{ mb: 2 }}>
-        <PageHeader
-          text="Sequence Execution Logs"
-          supportingText="View and monitor sequence execution history"
-        />
-      </Box>
-
-      {/* Error Banner */}
-      {error && (
-        <Box sx={{ mb: 2 }}>
-          <Banner
-            type={BannerTypes.ERROR}
-            size={BannerSizes.SMALL}
-            message={error}
-            onClose={() => setError(null)}
-          />
-        </Box>
-      )}
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
+        Sequence Execution Logs
+      </Typography>
 
       {/* Filters */}
-      <Box sx={{
-        display: 'flex',
-        gap: 2,
-        mb: 2,
-        alignItems: 'center',
-      }}>
-        <Box sx={{ width: '300px', '& > div': { marginBottom: 0 } }}>
-          <Input
-            type={InputTypes.TEXT}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
             placeholder="Search executions..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </Box>
-        <Box className="filter-dropdown">
-          <DropdownSingleSelect
-            items={statusItems}
-            onSelect={handleStatusSelect}
-            placeholder="Status"
-          />
-        </Box>
-      </Box>
-
-      {/* Execution Logs Table */}
-      <Box sx={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        border: '1px solid #e5e7eb',
-        overflow: 'hidden',
-        '& .tbl-cont': {
-          borderTop: 'none',
-          '& table': {
-            borderCollapse: 'collapse',
-            borderSpacing: 0,
-          },
-          '& .tbl-th, & .tbl-td': {
-            borderRight: 'none',
-          },
-          '& .tbl-row-action-items-cont': {
-            minWidth: '80px',
-            width: '80px',
-            '& .trai-wrapper': {
-              '& .tbl-row-action-item:not(.kebab)': {
-                display: 'flex !important',
-                opacity: 0,
-                pointerEvents: 'none',
-              },
-            },
-          },
-          '& table tr:hover .tbl-row-action-items-cont .trai-wrapper .tbl-row-action-item:not(.kebab)': {
-            opacity: 1,
-            pointerEvents: 'auto',
-          },
-        },
-      }}>
-        {tableData.length === 0 ? (
-          <EmptyState
-            header="No execution logs found"
-            description={searchTerm || statusFilter
-              ? "Try adjusting your filters to find what you're looking for"
-              : "Execution logs will appear here once sequences are run"}
-          />
-        ) : (
-          <Table
-            columns={columns}
-            data={tableData}
-            actionItems={actionItems}
-            maxActions={1}
-            onAction={handleAction}
-            selectable={false}
-            showPagination={true}
-            paginationConfig={{
-              rowsPerPage: 25,
-              rowsPerPageOptions: [10, 25, 50, 100],
+            size="small"
+            sx={{ flexGrow: 1, minWidth: 300 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
             }}
           />
-        )}
-      </Box>
-    </Container>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel>Status</InputLabel>
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              label="Status"
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="running">Running</MenuItem>
+              <MenuItem value="completed">Completed</MenuItem>
+              <MenuItem value="failed">Failed</MenuItem>
+              <MenuItem value="cancelled">Cancelled</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+      </Paper>
+
+      {/* Table */}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : (
+        <Paper>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Started At</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Sequence</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Execution ID</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Triggered By</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Trigger Source</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paginatedExecutions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                      <Typography color="text.secondary">No execution logs found</Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedExecutions.map((execution) => (
+                    <ExecutionRow
+                      key={execution.id}
+                      execution={execution}
+                      onViewDetails={onNavigateToDetails}
+                    />
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <TablePagination
+            component="div"
+            count={filteredExecutions.length}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+          />
+        </Paper>
+      )}
+    </Box>
   );
 };
 

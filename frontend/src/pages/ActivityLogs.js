@@ -1,59 +1,37 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Box, Container } from '@mui/material';
+import React, { useState, useEffect } from 'react';
 import {
-  Input,
-  InputTypes,
+  Box,
+  Typography,
+  Paper,
   Table,
-  ColumnTypes,
-  Loading,
-  EmptyState,
-  DropdownSingleSelect,
-  PageHeader,
-} from '@leegality/leegality-react-component-library';
-import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  Chip,
+  TextField,
+  InputAdornment,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
+import { Search as SearchIcon } from '@mui/icons-material';
 import { activityLogsApi } from '../services/api';
-
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-};
-
-// Entity type filter options
-const entityTypeOptions = [
-  { id: '', label: 'All Entity Types', selected: true },
-  { id: 'connector', label: 'Connector', selected: false },
-  { id: 'credential', label: 'Credential', selected: false },
-  { id: 'action', label: 'Action', selected: false },
-  { id: 'event', label: 'Event', selected: false },
-  { id: 'sequence', label: 'Sequence', selected: false },
-];
-
-// Action type filter options
-const actionTypeOptions = [
-  { id: '', label: 'All Actions', selected: true },
-  { id: 'created', label: 'Created', selected: false },
-  { id: 'updated', label: 'Updated', selected: false },
-  { id: 'deleted', label: 'Deleted', selected: false },
-  { id: 'activated', label: 'Activated', selected: false },
-  { id: 'deactivated', label: 'Deactivated', selected: false },
-];
 
 const ActivityLogs = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [searchTerm, setSearchTerm] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState('');
   const [actionTypeFilter, setActionTypeFilter] = useState('');
-  const [entityTypeItems, setEntityTypeItems] = useState(entityTypeOptions);
-  const [actionTypeItems, setActionTypeItems] = useState(actionTypeOptions);
 
   useEffect(() => {
     loadLogs();
@@ -73,223 +51,219 @@ const ActivityLogs = () => {
     }
   };
 
-  const handleEntityTypeSelect = (itemId) => {
-    setEntityTypeItems(prevItems =>
-      prevItems.map(item => ({
-        ...item,
-        selected: item.id === itemId
-      }))
-    );
-    setEntityTypeFilter(itemId);
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
   };
 
-  const handleActionTypeSelect = (itemId) => {
-    setActionTypeItems(prevItems =>
-      prevItems.map(item => ({
-        ...item,
-        selected: item.id === itemId
-      }))
-    );
-    setActionTypeFilter(itemId);
+  const handleChangeRowsPerPage = (event) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const getEntityTypeColor = (entityType) => {
+    const colors = {
+      connector: '#3b82f6',
+      credential: '#8b5cf6',
+      action: '#10b981',
+      event: '#ec4899',
+      sequence: '#f59e0b',
+    };
+    return colors[entityType] || '#6b7280';
+  };
+
+  const getActionTypeColor = (actionType) => {
+    const colors = {
+      created: '#10b981',
+      updated: '#3b82f6',
+      deleted: '#ef4444',
+      activated: '#22c55e',
+      deactivated: '#f59e0b',
+    };
+    return colors[actionType] || '#6b7280';
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
   };
 
   // Filter logs
-  const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
-      const matchesSearch =
-        searchTerm === '' ||
-        log.entity_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.user_email.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredLogs = logs.filter((log) => {
+    const matchesSearch =
+      searchTerm === '' ||
+      log.entity_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.user_email.toLowerCase().includes(searchTerm.toLowerCase());
 
-      const matchesEntityType = entityTypeFilter === '' || log.entity_type === entityTypeFilter;
-      const matchesActionType = actionTypeFilter === '' || log.action_type === actionTypeFilter;
+    const matchesEntityType = entityTypeFilter === '' || log.entity_type === entityTypeFilter;
+    const matchesActionType = actionTypeFilter === '' || log.action_type === actionTypeFilter;
 
-      return matchesSearch && matchesEntityType && matchesActionType;
-    });
-  }, [logs, searchTerm, entityTypeFilter, actionTypeFilter]);
+    return matchesSearch && matchesEntityType && matchesActionType;
+  });
 
-  // Table columns
-  const columns = useMemo(() => [
-    {
-      id: 'created_at',
-      label: 'Timestamp',
-      accessor: '_timestampDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 180,
-    },
-    {
-      id: 'user_email',
-      label: 'User',
-      accessor: '_userDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 200,
-    },
-    {
-      id: 'entity_type',
-      label: 'Entity Type',
-      accessor: '_entityTypeDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 120,
-    },
-    {
-      id: 'action_type',
-      label: 'Action',
-      accessor: '_actionTypeDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 120,
-    },
-    {
-      id: 'message',
-      label: 'Message',
-      accessor: '_messageDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 350,
-    },
-  ], []);
-
-  // Transform data for table
-  const tableData = useMemo(() => {
-    return filteredLogs.map(log => ({
-      id: log.id.toString(),
-      ...log,
-      // Timestamp display
-      _timestampDisplay: (
-        <span style={{ fontSize: '13px', color: '#344054', whiteSpace: 'nowrap' }}>
-          {formatDate(log.created_at)}
-        </span>
-      ),
-      // User display
-      _userDisplay: (
-        <div>
-          <div style={{ fontWeight: 500, color: '#101828', fontSize: '14px' }}>
-            {log.user_email || 'abc@company.com'}
-          </div>
-          <div style={{ fontSize: '12px', color: '#667085' }}>
-            {log.user_info || 'N/A'}
-          </div>
-        </div>
-      ),
-      // Entity type display (plain text)
-      _entityTypeDisplay: (
-        <span style={{ fontSize: '14px', color: '#344054' }}>
-          {log.entity_type ? log.entity_type.charAt(0).toUpperCase() + log.entity_type.slice(1) : 'N/A'}
-        </span>
-      ),
-      // Action type display (plain text)
-      _actionTypeDisplay: (
-        <span style={{ fontSize: '14px', color: '#344054' }}>
-          {log.action_type ? log.action_type.charAt(0).toUpperCase() + log.action_type.slice(1) : 'N/A'}
-        </span>
-      ),
-      // Message display
-      _messageDisplay: (
-        <span style={{ fontSize: '14px', color: '#667085', maxWidth: '400px', display: 'block' }}>
-          {log.message}
-        </span>
-      ),
-    }));
-  }, [filteredLogs]);
-
-  if (loading) {
-    return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <Loading loaderMsgProps={{ loaderMsg: 'Loading activity logs...' }} />
-      </Box>
-    );
-  }
+  // Paginate
+  const paginatedLogs = filteredLogs.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      {/* Page Header */}
-      <Box sx={{ mb: 2 }}>
-        <PageHeader
-          text="Activity Logs"
-          supportingText="View system activity and audit trail"
-        />
-      </Box>
-
-      {/* Error Banner */}
-      {error && (
-        <Box sx={{ mb: 2 }}>
-          <Banner
-            type={BannerTypes.ERROR}
-            size={BannerSizes.SMALL}
-            message={error}
-            onClose={() => setError(null)}
-          />
-        </Box>
-      )}
+    <Box sx={{ p: 3 }}>
+      <Typography variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
+        Activity Logs
+      </Typography>
 
       {/* Filters */}
-      <Box sx={{
-        display: 'flex',
-        gap: 2,
-        mb: 2,
-        alignItems: 'center',
-      }}>
-        <Box sx={{ width: '300px', '& > div': { marginBottom: 0 } }}>
-          <Input
-            type={InputTypes.TEXT}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField
             placeholder="Search logs..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </Box>
-        <Box className="filter-dropdown">
-          <DropdownSingleSelect
-            items={entityTypeItems}
-            onSelect={handleEntityTypeSelect}
-            placeholder="Entity Type"
-          />
-        </Box>
-        <Box className="filter-dropdown">
-          <DropdownSingleSelect
-            items={actionTypeItems}
-            onSelect={handleActionTypeSelect}
-            placeholder="Action Type"
-          />
-        </Box>
-      </Box>
-
-      {/* Activity Logs Table */}
-      <Box sx={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        border: '1px solid #e5e7eb',
-        overflow: 'hidden',
-        '& .tbl-cont': {
-          borderTop: 'none',
-          '& table': {
-            borderCollapse: 'collapse',
-            borderSpacing: 0,
-          },
-          '& .tbl-th, & .tbl-td': {
-            borderRight: 'none',
-          },
-        },
-      }}>
-        {tableData.length === 0 ? (
-          <EmptyState
-            header="No activity logs found"
-            description={searchTerm || entityTypeFilter || actionTypeFilter
-              ? "Try adjusting your filters to find what you're looking for"
-              : "Activity logs will appear here once actions are performed"}
-          />
-        ) : (
-          <Table
-            columns={columns}
-            data={tableData}
-            selectable={false}
-            showPagination={true}
-            paginationConfig={{
-              rowsPerPage: 25,
-              rowsPerPageOptions: [10, 25, 50, 100],
+            size="small"
+            sx={{ flexGrow: 1, minWidth: 300 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
             }}
           />
-        )}
-      </Box>
-    </Container>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel>Entity Type</InputLabel>
+            <Select
+              value={entityTypeFilter}
+              onChange={(e) => setEntityTypeFilter(e.target.value)}
+              label="Entity Type"
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="connector">Connector</MenuItem>
+              <MenuItem value="credential">Credential</MenuItem>
+              <MenuItem value="action">Action</MenuItem>
+              <MenuItem value="event">Event</MenuItem>
+              <MenuItem value="sequence">Sequence</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel>Action Type</InputLabel>
+            <Select
+              value={actionTypeFilter}
+              onChange={(e) => setActionTypeFilter(e.target.value)}
+              label="Action Type"
+            >
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="created">Created</MenuItem>
+              <MenuItem value="updated">Updated</MenuItem>
+              <MenuItem value="deleted">Deleted</MenuItem>
+              <MenuItem value="activated">Activated</MenuItem>
+              <MenuItem value="deactivated">Deactivated</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+      </Paper>
+
+      {/* Table */}
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Alert severity="error">{error}</Alert>
+      ) : (
+        <Paper>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Timestamp</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>User</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Entity Type</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Action</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Entity</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Message</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paginatedLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                      <Typography color="text.secondary">No activity logs found</Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedLogs.map((log) => (
+                    <TableRow key={log.id} hover>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        <Typography variant="body2">{formatDate(log.created_at)}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {log.user_email || 'abc@company.com'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                          {log.user_info || 'N/A'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={log.entity_type}
+                          size="small"
+                          sx={{
+                            backgroundColor: `${getEntityTypeColor(log.entity_type)}20`,
+                            color: getEntityTypeColor(log.entity_type),
+                            fontWeight: 600,
+                            textTransform: 'capitalize',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={log.action_type}
+                          size="small"
+                          sx={{
+                            backgroundColor: `${getActionTypeColor(log.action_type)}20`,
+                            color: getActionTypeColor(log.action_type),
+                            fontWeight: 600,
+                            textTransform: 'capitalize',
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {log.entity_name}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ maxWidth: 400 }}>
+                          {log.message}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <TablePagination
+            component="div"
+            count={filteredLogs.length}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[10, 25, 50, 100]}
+          />
+        </Paper>
+      )}
+    </Box>
   );
 };
 

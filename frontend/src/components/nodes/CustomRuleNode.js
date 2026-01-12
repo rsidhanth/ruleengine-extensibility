@@ -2,7 +2,6 @@ import React from 'react';
 import { Handle, Position } from 'reactflow';
 import { Box, Typography, IconButton, Chip } from '@mui/material';
 import { Settings as SettingsIcon, Code as CodeIcon } from '@mui/icons-material';
-import notification from '@leegality/leegality-react-component-library/dist/notification';
 
 const CustomRuleNode = ({ data, id }) => {
   // Add defensive checks for data
@@ -29,7 +28,7 @@ const CustomRuleNode = ({ data, id }) => {
 
     if (!data.onSettingsClick) {
       console.error('onSettingsClick handler is not defined!', { id, data });
-      notification.error('Settings handler is not configured', 'Please try refreshing the page.');
+      alert('Error: Settings handler is not configured. Please try refreshing the page.');
       return;
     }
 
@@ -37,7 +36,7 @@ const CustomRuleNode = ({ data, id }) => {
       data.onSettingsClick(id, data);
     } catch (error) {
       console.error('Error in onSettingsClick handler:', error);
-      notification.error('Error opening settings', 'Check console for details.');
+      alert('Error opening settings. Check console for details.');
     }
   };
 

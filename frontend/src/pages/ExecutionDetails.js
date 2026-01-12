@@ -1,83 +1,35 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Box, Container } from '@mui/material';
+import React, { useState, useEffect } from 'react';
 import {
-  Button,
-  ButtonTypes,
-  ButtonSizes,
-  Table,
-  ColumnTypes,
-  Badge,
-  BadgeTypes,
-  BadgeSizes,
-  Loading,
-  Modal,
-  ModalTypes,
+  Box,
+  Typography,
+  Paper,
+  IconButton,
+  Chip,
+  CircularProgress,
+  Alert,
+  Grid,
   Accordion,
-  AccordionTypes,
-  AccordionSizes,
-  Card,
-  CardTypes,
-  PageHeader,
-} from '@leegality/leegality-react-component-library';
-import Banner, { BannerTypes, BannerSizes } from '@leegality/leegality-react-component-library/dist/banner';
-import Icon from '@leegality/leegality-react-component-library/dist/icon';
-import { Eye, ArrowLeft, X } from 'react-feather';
-import { v4 as uuidv4 } from 'uuid';
+  AccordionSummary,
+  AccordionDetails,
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  TableContainer,
+  TableHead,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from '@mui/material';
+import {
+  ArrowBack as ArrowBackIcon,
+  ExpandMore as ExpandMoreIcon,
+  Visibility as VisibilityIcon,
+  Close as CloseIcon,
+} from '@mui/icons-material';
 import { sequenceExecutionsApi, executionLogsApi } from '../services/api';
-
-// Icon render helper
-const getRenderIcon = (IconComponent) =>
-  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
-
-// Status badge mapping
-const getStatusBadgeType = (status) => {
-  switch (status) {
-    case 'running': return BadgeTypes.PRIMARY;
-    case 'completed': return BadgeTypes.SUCCESS;
-    case 'failed': return BadgeTypes.ERROR;
-    case 'cancelled': return BadgeTypes.DEFAULT;
-    case 'started': return BadgeTypes.DEFAULT;
-    case 'skipped': return BadgeTypes.DEFAULT;
-    default: return BadgeTypes.DEFAULT;
-  }
-};
-
-// Node type badge mapping
-const getNodeTypeBadgeType = (nodeType) => {
-  switch (nodeType) {
-    case 'trigger': return BadgeTypes.INFO;
-    case 'action': return BadgeTypes.PRIMARY;
-    case 'custom_rule': return BadgeTypes.WARNING;
-    case 'condition': return BadgeTypes.DEFAULT;
-    default: return BadgeTypes.DEFAULT;
-  }
-};
-
-const formatDate = (dateString) => {
-  if (!dateString) return '-';
-  const date = new Date(dateString);
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-};
-
-const formatDuration = (ms) => {
-  if (!ms) return '-';
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-  return `${(ms / 60000).toFixed(2)}m`;
-};
-
-const formatJSON = (data) => {
-  if (!data) return 'N/A';
-  if (typeof data === 'string') return data;
-  return JSON.stringify(data, null, 2);
-};
 
 const ExecutionDetails = ({ executionId, onBack }) => {
   const [execution, setExecution] = useState(null);
@@ -86,7 +38,6 @@ const ExecutionDetails = ({ executionId, onBack }) => {
   const [error, setError] = useState(null);
   const [selectedLog, setSelectedLog] = useState(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
-  const modalId = useMemo(() => uuidv4(), []);
 
   useEffect(() => {
     loadExecutionDetails();
@@ -96,6 +47,7 @@ const ExecutionDetails = ({ executionId, onBack }) => {
     setLoading(true);
     setError(null);
     try {
+      // Load execution details - need to get all executions to find the one with matching execution_id
       const executionsResponse = await sequenceExecutionsApi.getAll();
       const foundExecution = executionsResponse.data.find(
         (e) => e.execution_id === executionId
@@ -109,13 +61,23 @@ const ExecutionDetails = ({ executionId, onBack }) => {
 
       setExecution(foundExecution);
 
+      console.log('Loading logs for execution ID:', foundExecution.id, 'execution_id:', foundExecution.execution_id);
+
+      // Load execution logs for THIS specific execution only using the database ID
       const logsResponse = await executionLogsApi.getAll({
         sequence_execution: foundExecution.id,
       });
 
+      console.log('Received logs:', logsResponse.data.length, 'logs');
+      console.log('All logs:', logsResponse.data.map(l => ({ id: l.id, sequence_execution: l.sequence_execution, node: l.node_name })));
+
+      // Additional filter to ensure we only get logs for this specific execution
+      // (in case the API doesn't filter properly)
       const filteredLogs = logsResponse.data.filter(
         (log) => log.sequence_execution === foundExecution.id
       );
+
+      console.log('After filtering:', filteredLogs.length, 'logs remain');
 
       setLogs(filteredLogs);
     } catch (err) {
@@ -124,6 +86,42 @@ const ExecutionDetails = ({ executionId, onBack }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      running: '#3b82f6',
+      completed: '#10b981',
+      failed: '#ef4444',
+      cancelled: '#6b7280',
+    };
+    return colors[status] || '#6b7280';
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const formatDuration = (ms) => {
+    if (!ms) return '-';
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
+    return `${(ms / 60000).toFixed(2)}m`;
+  };
+
+  const formatJSON = (data) => {
+    if (!data) return 'N/A';
+    if (typeof data === 'string') return data;
+    return JSON.stringify(data, null, 2);
   };
 
   const handleViewDetails = (log) => {
@@ -136,378 +134,363 @@ const ExecutionDetails = ({ executionId, onBack }) => {
     setSelectedLog(null);
   };
 
-  // Handle table actions
-  const handleAction = (rowId, actionId, dataItem) => {
-    const log = logs.find(l => l.id === rowId);
-    if (!log) return;
-
-    if (actionId === 'view') {
-      handleViewDetails(log);
-    }
+  const getNodeStatusColor = (status) => {
+    const colors = {
+      completed: '#10b981',
+      running: '#3b82f6',
+      failed: '#ef4444',
+      started: '#6b7280',
+      skipped: '#9ca3af',
+    };
+    return colors[status] || '#6b7280';
   };
 
-  // Table action items
-  const actionItems = useMemo(() => [
-    { id: 'view', label: 'View Details', renderIcon: getRenderIcon(Eye), tooltipProps: { description: 'View node details' } },
-  ], []);
-
-  // Table columns for logs
-  const columns = useMemo(() => [
-    {
-      id: 'node_id',
-      label: 'Node ID',
-      accessor: '_nodeIdDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 150,
-    },
-    {
-      id: 'node_type',
-      label: 'Node Type',
-      accessor: '_nodeTypeBadge',
-      type: ColumnTypes.BADGE,
-      width: 120,
-    },
-    {
-      id: 'node_name',
-      label: 'Node Name',
-      accessor: '_nodeNameDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 200,
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      accessor: '_statusBadge',
-      type: ColumnTypes.BADGE,
-      width: 100,
-    },
-    {
-      id: 'started_at',
-      label: 'Started At',
-      accessor: '_startedAtDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 180,
-    },
-    {
-      id: 'completed_at',
-      label: 'Completed At',
-      accessor: '_completedAtDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 180,
-    },
-    {
-      id: 'duration_ms',
-      label: 'Duration',
-      accessor: '_durationDisplay',
-      type: ColumnTypes.CUSTOM,
-      width: 100,
-    },
-  ], []);
-
-  // Transform data for table
-  const tableData = useMemo(() => {
-    return logs.map(log => ({
-      id: log.id.toString(),
-      ...log,
-      // Node ID display
-      _nodeIdDisplay: (
-        <code style={{ fontSize: '11px', color: '#344054', backgroundColor: '#F9FAFB', padding: '2px 6px', borderRadius: '4px' }}>
-          {log.node_id}
-        </code>
-      ),
-      // Node type badge
-      _nodeTypeBadge: {
-        label: log.node_type ? log.node_type.replace('_', ' ').toUpperCase() : 'N/A',
-        type: getNodeTypeBadgeType(log.node_type),
-        size: BadgeSizes.SMALL,
-      },
-      // Node name display
-      _nodeNameDisplay: (
-        <span style={{ fontWeight: 500, color: '#101828', fontSize: '14px' }}>
-          {log.node_name || log.node_id}
-        </span>
-      ),
-      // Status badge
-      _statusBadge: {
-        label: log.status ? log.status.charAt(0).toUpperCase() + log.status.slice(1) : 'N/A',
-        type: getStatusBadgeType(log.status),
-        size: BadgeSizes.SMALL,
-      },
-      // Started at display
-      _startedAtDisplay: (
-        <span style={{ fontSize: '12px', color: '#344054' }}>{formatDate(log.started_at)}</span>
-      ),
-      // Completed at display
-      _completedAtDisplay: (
-        <span style={{ fontSize: '12px', color: '#344054' }}>{log.completed_at ? formatDate(log.completed_at) : '-'}</span>
-      ),
-      // Duration display
-      _durationDisplay: (
-        <span style={{ fontSize: '14px', color: '#344054' }}>{formatDuration(log.duration_ms)}</span>
-      ),
-    }));
-  }, [logs]);
-
-  // Render trigger details
   const renderTriggerDetails = (log) => {
     const inputData = log.input_data || {};
     const triggerSource = inputData.trigger_source || {};
 
     return (
-      <div style={{ marginTop: '16px' }}>
-        <Accordion
-          label="Event Information"
-          type={AccordionTypes.CARD}
-          size={AccordionSizes.MEDIUM}
-          defaultExpanded
-        >
-          <div style={{ padding: '16px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '13px' }}>
-              <tbody>
-                <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                  <td style={{ padding: '8px 0', fontWeight: 600, width: '20%' }}>Event ID</td>
-                  <td style={{ padding: '8px 0' }}>{inputData.event_id || 'N/A'}</td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                  <td style={{ padding: '8px 0', fontWeight: 600 }}>Event Name</td>
-                  <td style={{ padding: '8px 0' }}>{inputData.event_name || 'N/A'}</td>
-                </tr>
-                {triggerSource.ip && (
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600 }}>IP Address</td>
-                    <td style={{ padding: '8px 0' }}>{triggerSource.ip}</td>
-                  </tr>
-                )}
-                {triggerSource.os && (
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600 }}>Operating System</td>
-                    <td style={{ padding: '8px 0' }}>{triggerSource.os}</td>
-                  </tr>
-                )}
-                {triggerSource.device && (
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600 }}>Device Type</td>
-                    <td style={{ padding: '8px 0' }}>{triggerSource.device}</td>
-                  </tr>
-                )}
-                {triggerSource.browser && (
-                  <tr>
-                    <td style={{ padding: '8px 0', fontWeight: 600 }}>Browser</td>
-                    <td style={{ padding: '8px 0' }}>{triggerSource.browser}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+      <Box sx={{ mt: 2 }}>
+        <Accordion defaultExpanded>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Event Information
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+              <Table size="small">
+                <TableBody>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600, width: '20%' }}>Event ID</TableCell>
+                    <TableCell>{inputData.event_id || 'N/A'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Event Name</TableCell>
+                    <TableCell>{inputData.event_name || 'N/A'}</TableCell>
+                  </TableRow>
+                  {triggerSource.ip && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>IP Address</TableCell>
+                      <TableCell>{triggerSource.ip}</TableCell>
+                    </TableRow>
+                  )}
+                  {triggerSource.os && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Operating System</TableCell>
+                      <TableCell>{triggerSource.os}</TableCell>
+                    </TableRow>
+                  )}
+                  {triggerSource.device && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Device Type</TableCell>
+                      <TableCell>{triggerSource.device}</TableCell>
+                    </TableRow>
+                  )}
+                  {triggerSource.browser && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Browser</TableCell>
+                      <TableCell>{triggerSource.browser}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Box>
+          </AccordionDetails>
         </Accordion>
 
-        <div style={{ marginTop: '12px' }}>
-          <Accordion
-            label="Trigger Payload"
-            type={AccordionTypes.CARD}
-            size={AccordionSizes.MEDIUM}
-            defaultExpanded
-          >
-            <pre style={{ margin: 0, padding: '16px', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '13px', backgroundColor: '#F9FAFB', borderRadius: '4px' }}>
+        <Accordion defaultExpanded sx={{ mt: 1 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Trigger Payload
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                fontSize: '0.85rem',
+              }}
+            >
               {formatJSON(inputData.trigger_payload)}
             </pre>
-          </Accordion>
-        </div>
-      </div>
+          </AccordionDetails>
+        </Accordion>
+      </Box>
     );
   };
 
-  // Render action details
   const renderActionDetails = (log) => {
     const outputData = log.output_data || {};
     const requestDetails = outputData.request_details || {};
     const inputData = log.input_data || {};
 
     return (
-      <div style={{ marginTop: '16px' }}>
-        <Accordion
-          label="Request Details"
-          type={AccordionTypes.CARD}
-          size={AccordionSizes.MEDIUM}
-          defaultExpanded
-        >
-          <div style={{ padding: '16px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '13px' }}>
-              <tbody>
-                <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                  <td style={{ padding: '8px 0', fontWeight: 600, width: '20%' }}>Method</td>
-                  <td style={{ padding: '8px 0' }}>{requestDetails.method || 'N/A'}</td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                  <td style={{ padding: '8px 0', fontWeight: 600 }}>URL</td>
-                  <td style={{ padding: '8px 0', wordBreak: 'break-all' }}>{requestDetails.url || outputData.url || 'N/A'}</td>
-                </tr>
-                {requestDetails.headers && Object.keys(requestDetails.headers).length > 0 && (
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600, verticalAlign: 'top' }}>Headers</td>
-                    <td style={{ padding: '8px 0' }}><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{formatJSON(requestDetails.headers)}</pre></td>
-                  </tr>
-                )}
-                {requestDetails.params && Object.keys(requestDetails.params).length > 0 && (
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600, verticalAlign: 'top' }}>Query Params</td>
-                    <td style={{ padding: '8px 0' }}><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{formatJSON(requestDetails.params)}</pre></td>
-                  </tr>
-                )}
-                {requestDetails.body && Object.keys(requestDetails.body).length > 0 && (
-                  <tr>
-                    <td style={{ padding: '8px 0', fontWeight: 600, verticalAlign: 'top' }}>Request Body</td>
-                    <td style={{ padding: '8px 0' }}><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{formatJSON(requestDetails.body)}</pre></td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+      <Box sx={{ mt: 2 }}>
+        {/* Request Details */}
+        <Accordion defaultExpanded>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Request Details
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+              <Table size="small">
+                <TableBody>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600, width: '20%' }}>Method</TableCell>
+                    <TableCell>{requestDetails.method || 'N/A'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>URL</TableCell>
+                    <TableCell sx={{ wordBreak: 'break-all' }}>
+                      {requestDetails.url || outputData.url || 'N/A'}
+                    </TableCell>
+                  </TableRow>
+                  {requestDetails.headers && Object.keys(requestDetails.headers).length > 0 && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, verticalAlign: 'top' }}>
+                        Headers
+                      </TableCell>
+                      <TableCell>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                          {formatJSON(requestDetails.headers)}
+                        </pre>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {requestDetails.params && Object.keys(requestDetails.params).length > 0 && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, verticalAlign: 'top' }}>
+                        Query Params
+                      </TableCell>
+                      <TableCell>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                          {formatJSON(requestDetails.params)}
+                        </pre>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {requestDetails.body && Object.keys(requestDetails.body).length > 0 && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, verticalAlign: 'top' }}>
+                        Request Body
+                      </TableCell>
+                      <TableCell>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                          {formatJSON(requestDetails.body)}
+                        </pre>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </Box>
+          </AccordionDetails>
         </Accordion>
 
-        <div style={{ marginTop: '12px' }}>
-          <Accordion
-            label="Response Details"
-            type={AccordionTypes.CARD}
-            size={AccordionSizes.MEDIUM}
-            defaultExpanded
-          >
-            <div style={{ padding: '16px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'monospace', fontSize: '13px' }}>
-                <tbody>
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600, width: '20%' }}>Status Code</td>
-                    <td style={{ padding: '8px 0' }}>
-                      <Badge
-                        type={outputData.status_code >= 200 && outputData.status_code < 300 ? BadgeTypes.SUCCESS : BadgeTypes.ERROR}
-                        size={BadgeSizes.SMALL}
+        {/* Response Details */}
+        <Accordion defaultExpanded sx={{ mt: 1 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Response Details
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>
+              <Table size="small">
+                <TableBody>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600, width: '20%' }}>Status Code</TableCell>
+                    <TableCell>
+                      <Chip
                         label={outputData.status_code || 'N/A'}
+                        size="small"
+                        color={
+                          outputData.status_code >= 200 && outputData.status_code < 300
+                            ? 'success'
+                            : 'error'
+                        }
                       />
-                    </td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                    <td style={{ padding: '8px 0', fontWeight: 600 }}>Response Time</td>
-                    <td style={{ padding: '8px 0' }}>{formatDuration(outputData.response_time_ms)}</td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Response Time</TableCell>
+                    <TableCell>{formatDuration(outputData.response_time_ms)}</TableCell>
+                  </TableRow>
                   {outputData.headers && Object.keys(outputData.headers).length > 0 && (
-                    <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                      <td style={{ padding: '8px 0', fontWeight: 600, verticalAlign: 'top' }}>Response Headers</td>
-                      <td style={{ padding: '8px 0' }}><pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{formatJSON(outputData.headers)}</pre></td>
-                    </tr>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, verticalAlign: 'top' }}>
+                        Response Headers
+                      </TableCell>
+                      <TableCell>
+                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                          {formatJSON(outputData.headers)}
+                        </pre>
+                      </TableCell>
+                    </TableRow>
                   )}
                   {outputData.body && (
-                    <tr style={{ borderBottom: '1px solid #E5E7EB' }}>
-                      <td style={{ padding: '8px 0', fontWeight: 600, verticalAlign: 'top' }}>Response Body</td>
-                      <td style={{ padding: '8px 0' }}>
-                        <pre style={{ margin: 0, whiteSpace: 'pre-wrap', maxHeight: '300px', overflow: 'auto' }}>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, verticalAlign: 'top' }}>
+                        Response Body
+                      </TableCell>
+                      <TableCell>
+                        <pre
+                          style={{
+                            margin: 0,
+                            whiteSpace: 'pre-wrap',
+                            maxHeight: '400px',
+                            overflow: 'auto',
+                          }}
+                        >
                           {formatJSON(outputData.body)}
                         </pre>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                   {outputData.error_message && (
-                    <tr>
-                      <td style={{ padding: '8px 0', fontWeight: 600, verticalAlign: 'top' }}>Error Message</td>
-                      <td style={{ padding: '8px 0', color: '#EF4444' }}>{outputData.error_message}</td>
-                    </tr>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, verticalAlign: 'top' }}>
+                        Error Message
+                      </TableCell>
+                      <TableCell>
+                        <Typography color="error">{outputData.error_message}</Typography>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
-            </div>
-          </Accordion>
-        </div>
+                </TableBody>
+              </Table>
+            </Box>
+          </AccordionDetails>
+        </Accordion>
 
+        {/* Input Configuration */}
         {inputData.actionConfig && (
-          <div style={{ marginTop: '12px' }}>
-            <Accordion
-              label="Node Configuration"
-              type={AccordionTypes.CARD}
-              size={AccordionSizes.MEDIUM}
-            >
-              <pre style={{ margin: 0, padding: '16px', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '13px', backgroundColor: '#F9FAFB', borderRadius: '4px' }}>
+          <Accordion sx={{ mt: 1 }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                Node Configuration
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem',
+                }}
+              >
                 {formatJSON(inputData)}
               </pre>
-            </Accordion>
-          </div>
+            </AccordionDetails>
+          </Accordion>
         )}
-      </div>
+      </Box>
     );
   };
 
-  // Render custom rule details
   const renderCustomRuleDetails = (log) => {
     const outputData = log.output_data || {};
     const inputData = log.input_data || {};
     const customRuleConfig = inputData.customRuleConfig || {};
 
     return (
-      <div style={{ marginTop: '16px' }}>
+      <Box sx={{ mt: 2 }}>
         {customRuleConfig.code && (
-          <Accordion
-            label="DSL Code"
-            type={AccordionTypes.CARD}
-            size={AccordionSizes.MEDIUM}
-            defaultExpanded
-          >
-            <pre style={{ margin: 0, padding: '16px', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '13px', backgroundColor: '#F5F5F5', borderRadius: '4px' }}>
-              {customRuleConfig.code}
-            </pre>
+          <Accordion defaultExpanded>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                DSL Code
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <pre
+                style={{
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'monospace',
+                  fontSize: '0.85rem',
+                  backgroundColor: '#f5f5f5',
+                  padding: '12px',
+                  borderRadius: '4px',
+                }}
+              >
+                {customRuleConfig.code}
+              </pre>
+            </AccordionDetails>
           </Accordion>
         )}
 
-        <div style={{ marginTop: '12px' }}>
-          <Accordion
-            label="Execution Result"
-            type={AccordionTypes.CARD}
-            size={AccordionSizes.MEDIUM}
-            defaultExpanded
-          >
-            <pre style={{ margin: 0, padding: '16px', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '13px', backgroundColor: '#F9FAFB', borderRadius: '4px' }}>
+        <Accordion defaultExpanded sx={{ mt: 1 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Execution Result
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                fontSize: '0.85rem',
+              }}
+            >
               {formatJSON(outputData)}
             </pre>
-          </Accordion>
-        </div>
-      </div>
+          </AccordionDetails>
+        </Accordion>
+      </Box>
     );
   };
 
-  // Render condition details
   const renderConditionDetails = (log) => {
     const outputData = log.output_data || {};
     const inputData = log.input_data || {};
 
     return (
-      <div style={{ marginTop: '16px' }}>
-        <Accordion
-          label="Condition Configuration"
-          type={AccordionTypes.CARD}
-          size={AccordionSizes.MEDIUM}
-          defaultExpanded
-        >
-          <pre style={{ margin: 0, padding: '16px', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '13px', backgroundColor: '#F9FAFB', borderRadius: '4px' }}>
-            {formatJSON(inputData.conditionSets || inputData.condition)}
-          </pre>
+      <Box sx={{ mt: 2 }}>
+        <Accordion defaultExpanded>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Condition Configuration
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                fontSize: '0.85rem',
+              }}
+            >
+              {formatJSON(inputData.conditionSets || inputData.condition)}
+            </pre>
+          </AccordionDetails>
         </Accordion>
 
-        <div style={{ marginTop: '12px' }}>
-          <Accordion
-            label="Evaluation Result"
-            type={AccordionTypes.CARD}
-            size={AccordionSizes.MEDIUM}
-            defaultExpanded
-          >
-            <div style={{ padding: '16px' }}>
-              <span style={{ fontSize: '14px' }}>
-                Condition evaluated to: <strong style={{ color: outputData.result ? '#10B981' : '#EF4444' }}>{outputData.result ? 'TRUE' : 'FALSE'}</strong>
-              </span>
-            </div>
-          </Accordion>
-        </div>
-      </div>
+        <Accordion defaultExpanded sx={{ mt: 1 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+              Evaluation Result
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography>
+              Condition evaluated to: <strong>{outputData.result ? 'TRUE' : 'FALSE'}</strong>
+            </Typography>
+          </AccordionDetails>
+        </Accordion>
+      </Box>
     );
   };
 
-  // Render node details based on type
   const renderNodeDetails = (log) => {
     switch (log.node_type) {
       case 'trigger':
@@ -520,238 +503,272 @@ const ExecutionDetails = ({ executionId, onBack }) => {
         return renderConditionDetails(log);
       default:
         return (
-          <div style={{ marginTop: '16px' }}>
-            <Accordion
-              label="Output Data"
-              type={AccordionTypes.CARD}
-              size={AccordionSizes.MEDIUM}
-              defaultExpanded
-            >
-              <pre style={{ margin: 0, padding: '16px', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '13px', backgroundColor: '#F9FAFB', borderRadius: '4px' }}>
-                {formatJSON(log.output_data)}
-              </pre>
+          <Box sx={{ mt: 2 }}>
+            <Accordion defaultExpanded>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                  Output Data
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    fontFamily: 'monospace',
+                    fontSize: '0.85rem',
+                  }}
+                >
+                  {formatJSON(log.output_data)}
+                </pre>
+              </AccordionDetails>
             </Accordion>
-          </div>
+          </Box>
         );
     }
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <Loading loaderMsgProps={{ loaderMsg: 'Loading execution details...' }} />
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+        <CircularProgress />
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-        <Banner
-          type={BannerTypes.ERROR}
-          size={BannerSizes.SMALL}
-          message={error}
-        />
-      </Container>
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
     );
   }
 
   if (!execution) {
     return (
-      <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-        <Banner
-          type={BannerTypes.WARNING}
-          size={BannerSizes.SMALL}
-          message="Execution not found"
-        />
-      </Container>
+      <Box sx={{ p: 3 }}>
+        <Alert severity="warning">Execution not found</Alert>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      {/* Breadcrumb Navigation */}
-      <Box sx={{ mb: 2 }}>
-        <button
-          onClick={onBack}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: 'none',
-            border: 'none',
-            color: '#7f56d9',
-            cursor: 'pointer',
-            padding: '4px 0',
-            fontSize: '14px',
-            fontWeight: 500,
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <IconButton onClick={onBack} sx={{ mr: 2 }}>
+          <ArrowBackIcon />
+        </IconButton>
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            Execution Details
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            {execution.sequence_name} - {execution.execution_id}
+          </Typography>
+        </Box>
+        <Chip
+          label={execution.status}
+          sx={{
+            backgroundColor: `${getStatusColor(execution.status)}20`,
+            color: getStatusColor(execution.status),
+            fontWeight: 600,
+            textTransform: 'capitalize',
           }}
-        >
-          <ArrowLeft size={16} />
-          Back to Execution Logs
-        </button>
-        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-          {execution.sequence_name} › Execution Details
-        </div>
-      </Box>
-
-      {/* Page Header */}
-      <Box sx={{ mb: 3, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <PageHeader
-          text="Execution Details"
-          supportingText={`${execution.sequence_name} - ${execution.execution_id}`}
-        />
-        <Badge
-          type={getStatusBadgeType(execution.status)}
-          size={BadgeSizes.MEDIUM}
-          label={execution.status.charAt(0).toUpperCase() + execution.status.slice(1)}
         />
       </Box>
 
       {/* Execution Summary */}
-      <Box sx={{
-        backgroundColor: '#ffffff',
-        border: '1px solid #e5e7eb',
-        borderRadius: '12px',
-        p: 3,
-        mb: 3,
-      }}>
-        <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#101828', margin: '0 0 16px 0' }}>
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
           Execution Summary
-        </h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-          <div>
-            <div style={{ fontSize: '12px', color: '#667085', marginBottom: '4px' }}>Sequence</div>
-            <div style={{ fontSize: '14px', fontWeight: 500, color: '#101828' }}>{execution.sequence_name}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#667085', marginBottom: '4px' }}>Execution ID</div>
-            <code style={{ fontSize: '12px', color: '#344054', backgroundColor: '#F9FAFB', padding: '2px 6px', borderRadius: '4px' }}>
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" color="text.secondary">
+              Sequence
+            </Typography>
+            <Typography variant="body1" sx={{ fontWeight: 500 }}>
+              {execution.sequence_name}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" color="text.secondary">
+              Execution ID
+            </Typography>
+            <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>
               {execution.execution_id}
-            </code>
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#667085', marginBottom: '4px' }}>Started At</div>
-            <div style={{ fontSize: '14px', color: '#344054' }}>{formatDate(execution.started_at)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '12px', color: '#667085', marginBottom: '4px' }}>Duration</div>
-            <div style={{ fontSize: '14px', color: '#344054' }}>{formatDuration(execution.duration_ms)}</div>
-          </div>
+            </Typography>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" color="text.secondary">
+              Started At
+            </Typography>
+            <Typography variant="body1">{formatDate(execution.started_at)}</Typography>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Typography variant="body2" color="text.secondary">
+              Duration
+            </Typography>
+            <Typography variant="body1">{formatDuration(execution.duration_ms)}</Typography>
+          </Grid>
           {execution.event_name && (
-            <div>
-              <div style={{ fontSize: '12px', color: '#667085', marginBottom: '4px' }}>Triggered By</div>
-              <div style={{ fontSize: '14px', color: '#344054' }}>{execution.event_name}</div>
-            </div>
+            <Grid item xs={12} md={6}>
+              <Typography variant="body2" color="text.secondary">
+                Triggered By
+              </Typography>
+              <Typography variant="body1">{execution.event_name}</Typography>
+            </Grid>
           )}
-        </div>
-      </Box>
+        </Grid>
+      </Paper>
 
       {/* Node Execution Logs */}
-      <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#101828', margin: '0 0 16px 0' }}>
+      <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
         Node Execution Logs
-      </h2>
-      <Box sx={{
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        border: '1px solid #e5e7eb',
-        overflow: 'hidden',
-        '& .tbl-cont': {
-          borderTop: 'none',
-          '& table': {
-            borderCollapse: 'collapse',
-            borderSpacing: 0,
-          },
-          '& .tbl-th, & .tbl-td': {
-            borderRight: 'none',
-          },
-          '& .tbl-row-action-items-cont': {
-            minWidth: '80px',
-            width: '80px',
-            '& .trai-wrapper': {
-              '& .tbl-row-action-item:not(.kebab)': {
-                display: 'flex !important',
-                opacity: 0,
-                pointerEvents: 'none',
-              },
-            },
-          },
-          '& table tr:hover .tbl-row-action-items-cont .trai-wrapper .tbl-row-action-item:not(.kebab)': {
-            opacity: 1,
-            pointerEvents: 'auto',
-          },
-        },
-      }}>
-        {logs.length === 0 ? (
-          <Box sx={{ p: 2 }}>
-            <Banner
-              type={BannerTypes.INFO}
-              size={BannerSizes.SMALL}
-              message="No execution logs available"
-            />
-          </Box>
-        ) : (
-          <Table
-            columns={columns}
-            data={tableData}
-            actionItems={actionItems}
-            maxActions={1}
-            onAction={handleAction}
-            selectable={false}
-            showPagination={false}
-          />
-        )}
-      </Box>
+      </Typography>
+      {logs.length === 0 ? (
+        <Alert severity="info">No execution logs available</Alert>
+      ) : (
+        <Paper>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600 }}>Node ID</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Node Type</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Node Name</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Started At</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Completed At</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Duration</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {logs.map((log) => (
+                  <TableRow key={log.id} hover>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                        {log.node_id}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={log.node_type}
+                        size="small"
+                        sx={{ fontSize: '0.7rem', height: '24px', textTransform: 'capitalize' }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {log.node_name || log.node_id}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={log.status}
+                        size="small"
+                        sx={{
+                          backgroundColor: `${getNodeStatusColor(log.status)}20`,
+                          color: getNodeStatusColor(log.status),
+                          fontWeight: 600,
+                          textTransform: 'capitalize',
+                          fontSize: '0.7rem',
+                          height: '24px',
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        {formatDate(log.started_at)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        {log.completed_at ? formatDate(log.completed_at) : '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{formatDuration(log.duration_ms)}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<VisibilityIcon />}
+                        onClick={() => handleViewDetails(log)}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        View Details
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
+      )}
 
-      {/* Details Modal */}
-      <Modal
+      {/* Full Page Details Modal */}
+      <Dialog
         open={detailsModalOpen}
-        type={ModalTypes.WITH_HEIGHT_TRANSITIONS}
-        id={modalId}
-        header={selectedLog ? (selectedLog.node_name || selectedLog.node_id) : 'Node Details'}
-        showClose={true}
         onClose={handleCloseDetails}
-        className="execution-details-modal"
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: { height: '90vh' }
+        }}
       >
         {selectedLog && (
-          <div style={{ padding: '0 24px 24px' }}>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-              <Badge
-                type={getNodeTypeBadgeType(selectedLog.node_type)}
-                size={BadgeSizes.SMALL}
-                label={selectedLog.node_type.replace('_', ' ').toUpperCase()}
-              />
-              <Badge
-                type={getStatusBadgeType(selectedLog.status)}
-                size={BadgeSizes.SMALL}
-                label={selectedLog.status.charAt(0).toUpperCase() + selectedLog.status.slice(1)}
-              />
-            </div>
-            {selectedLog.message && (
-              <div style={{ fontSize: '14px', color: '#667085', marginBottom: '16px' }}>
+          <>
+            <DialogTitle>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    {selectedLog.node_name || selectedLog.node_id}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                    <Chip
+                      label={selectedLog.node_type}
+                      size="small"
+                      sx={{ fontSize: '0.7rem', height: '22px' }}
+                    />
+                    <Chip
+                      label={selectedLog.status}
+                      size="small"
+                      sx={{
+                        backgroundColor: `${getNodeStatusColor(selectedLog.status)}20`,
+                        color: getNodeStatusColor(selectedLog.status),
+                        fontWeight: 600,
+                        textTransform: 'capitalize',
+                        fontSize: '0.7rem',
+                        height: '22px',
+                      }}
+                    />
+                  </Box>
+                </Box>
+                <IconButton onClick={handleCloseDetails}>
+                  <CloseIcon />
+                </IconButton>
+              </Box>
+            </DialogTitle>
+            <DialogContent dividers>
+              <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
                 {selectedLog.message}
-              </div>
-            )}
-            {renderNodeDetails(selectedLog)}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #E5E7EB' }}>
-              <Button
-                label="Close"
-                type={ButtonTypes.PRIMARY}
-                size={ButtonSizes.MEDIUM}
-                onClick={handleCloseDetails}
-              />
-            </div>
-          </div>
+              </Typography>
+              {renderNodeDetails(selectedLog)}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={handleCloseDetails} variant="contained">
+                Close
+              </Button>
+            </DialogActions>
+          </>
         )}
-      </Modal>
-
-      <style>{`
-        .execution-details-modal .modal-content-wrapper {
-          max-height: 80vh;
-          overflow-y: auto;
-        }
-      `}</style>
-    </Container>
+      </Dialog>
+    </Box>
   );
 };
 

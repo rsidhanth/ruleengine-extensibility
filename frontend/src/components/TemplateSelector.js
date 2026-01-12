@@ -1,20 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Modal,
-  ModalTypes,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Box,
   Card,
-  CardTypes,
-  BadgeTypes,
-  BadgeSizes,
-  ButtonTypes,
-  Loading,
-} from '@leegality/leegality-react-component-library';
-import Icon from '@leegality/leegality-react-component-library/dist/icon';
-import { GitBranch } from 'react-feather';
-
-// Icon render helper for Leegality components
-const getRenderIcon = (IconComponent) =>
-  IconComponent ? ({ size, color }) => <Icon icon={IconComponent} size={size} color={color} /> : null;
+  CardContent,
+  Typography,
+  IconButton,
+  Button,
+  CircularProgress,
+} from '@mui/material';
+import {
+  Close as CloseIcon,
+  AccountTree as WorkflowIcon,
+} from '@mui/icons-material';
 
 // Mock templates - in production, this would come from an API
 const mockTemplates = [
@@ -52,32 +53,18 @@ const mockTemplates = [
   },
 ];
 
-const getCategoryBadgeType = (category) => {
-  const badgeTypes = {
-    'Privacy Compliance': BadgeTypes.ERROR,
-    'Consent Management': BadgeTypes.PRIMARY,
-    'User Management': BadgeTypes.SUCCESS,
-    'Data Governance': BadgeTypes.WARNING,
-  };
-  return badgeTypes[category] || BadgeTypes.GRAY;
-};
-
 const TemplateSelector = ({ open, onClose, onSelectTemplate }) => {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const modalId = useMemo(() => 'template-selector-modal', []);
 
   useEffect(() => {
     if (open) {
       // Simulate API call
-      setLoading(true);
       setTimeout(() => {
         setTemplates(mockTemplates);
         setLoading(false);
       }, 500);
-    } else {
-      setSelectedTemplate(null);
     }
   }, [open]);
 
@@ -91,91 +78,141 @@ const TemplateSelector = ({ open, onClose, onSelectTemplate }) => {
     }
   };
 
-  const modalButtons = [
-    {
-      id: 'cancel',
-      type: ButtonTypes.SECONDARY,
-      label: 'Cancel',
-    },
-    {
-      id: 'continue',
-      type: ButtonTypes.PRIMARY,
-      label: 'Continue with Template',
-      disabled: !selectedTemplate,
-    },
-  ];
-
-  const handleButtonClick = (buttonId) => {
-    if (buttonId === 'cancel') {
-      onClose();
-    } else if (buttonId === 'continue') {
-      handleContinue();
-    }
+  const getCategoryColor = (category) => {
+    const colors = {
+      'Privacy Compliance': '#ef4444',
+      'Consent Management': '#3b82f6',
+      'User Management': '#10b981',
+      'Data Governance': '#8b5cf6',
+    };
+    return colors[category] || '#6b7280';
   };
 
   return (
-    <Modal
-      open={open}
-      type={ModalTypes.DEFAULT}
-      header="Select a Template"
-      description="Choose a template to start building your sequence. You can customize it after selection."
-      onClose={onClose}
-      showClose={true}
-      buttons={modalButtons}
-      onButtonClick={handleButtonClick}
-      id={modalId}
-      className="template-selector-modal"
-    >
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '32px' }}>
-          <Loading loaderMsgProps={{ loaderMsg: 'Loading templates...' }} />
-        </div>
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: '16px',
-          padding: '8px 0',
-          maxHeight: '400px',
-          overflowY: 'auto'
-        }}>
-          {templates.map((template) => (
-            <Card
-              key={template.id}
-              text={template.name}
-              supportingTexts={[template.description]}
-              renderIcon={getRenderIcon(GitBranch)}
-              useFeaturedIcon={true}
-              type={selectedTemplate?.id === template.id ? CardTypes.PRIMARY : CardTypes.DEFAULT}
-              isCardClickable={true}
-              onCardClick={() => handleSelectTemplate(template)}
-              badges={[
-                {
-                  id: `category-${template.id}`,
-                  label: template.category,
-                  type: getCategoryBadgeType(template.category),
-                  size: BadgeSizes.SMALL,
-                },
-              ]}
-              className={`template-card ${selectedTemplate?.id === template.id ? 'selected' : ''}`}
-            >
-              <div style={{
-                display: 'flex',
-                gap: '16px',
-                paddingTop: '12px',
-                borderTop: '1px solid #e5e7eb',
-                marginTop: '8px',
-                fontSize: '12px',
-                color: '#6b7280'
-              }}>
-                <span><strong>{template.nodeCount}</strong> nodes</span>
-                <span>Trigger: <strong>{template.trigger}</strong></span>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </Modal>
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+      <DialogTitle>
+        Select a Template
+        <IconButton
+          onClick={onClose}
+          sx={{
+            position: 'absolute',
+            right: 8,
+            top: 8,
+            color: '#6b7280',
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Choose a template to start building your sequence. You can customize it after selection.
+        </Typography>
+
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : (
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+            {templates.map((template) => (
+              <Box key={template.id}>
+                <Card
+                  sx={{
+                    cursor: 'pointer',
+                    border: `2px solid ${
+                      selectedTemplate?.id === template.id ? '#3b82f6' : '#e5e7eb'
+                    }`,
+                    transition: 'all 0.2s ease',
+                    backgroundColor:
+                      selectedTemplate?.id === template.id ? '#eff6ff' : '#ffffff',
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    '&:hover': {
+                      borderColor: '#3b82f6',
+                      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
+                      transform: 'translateY(-2px)',
+                    },
+                  }}
+                  onClick={() => handleSelectTemplate(template)}
+                >
+                  <CardContent sx={{ p: 2.5, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2 }}>
+                      <Box
+                        sx={{
+                          backgroundColor: `${getCategoryColor(template.category)}15`,
+                          borderRadius: 1.5,
+                          p: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <WorkflowIcon
+                          sx={{ color: getCategoryColor(template.category), fontSize: '1.5rem' }}
+                        />
+                      </Box>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography
+                          variant="subtitle1"
+                          sx={{ fontWeight: 600, fontSize: '0.9375rem' }}
+                        >
+                          {template.name}
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ mb: 2, fontSize: '0.8125rem', lineHeight: 1.5, flexGrow: 1 }}
+                    >
+                      {template.description}
+                    </Typography>
+
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        gap: 2,
+                        pt: 2,
+                        borderTop: '1px solid #e5e7eb',
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary">
+                        <strong>{template.nodeCount}</strong> nodes
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Trigger: <strong>{template.trigger}</strong>
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} sx={{ textTransform: 'none' }}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleContinue}
+          variant="contained"
+          disabled={!selectedTemplate}
+          sx={{
+            textTransform: 'none',
+            backgroundColor: '#3b82f6',
+            '&:hover': {
+              backgroundColor: '#2563eb',
+            },
+          }}
+        >
+          Continue with Template
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 };
 

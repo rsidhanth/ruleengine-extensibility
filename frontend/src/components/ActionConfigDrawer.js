@@ -26,7 +26,6 @@ import {
   Info as InfoIcon,
 } from '@mui/icons-material';
 import { connectorsApi, actionsApi } from '../services/api';
-import notification from '@leegality/leegality-react-component-library/dist/notification';
 
 const ActionConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = [], sequenceVariables = [] }) => {
   const [connectors, setConnectors] = useState([]);
@@ -177,7 +176,7 @@ const ActionConfigDrawer = ({ open, onClose, nodeData, onSave, triggerEvents = [
       setConnectors(response.data);
     } catch (error) {
       console.error('Error loading connectors:', error);
-      notification.error('Failed to load connectors', 'Check console for details.');
+      alert('Failed to load connectors. Check console for details.');
     }
   };
 
